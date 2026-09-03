@@ -1,9 +1,9 @@
 import { db, isFirebaseConfigured } from './config';
-import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, addDoc, getDocs, updateDoc, doc, deleteDoc, onSnapshot } from 'firebase/firestore';
 
 const STORAGE_KEY_ORDERS = 'waffloq_active_orders';
 
-// Restoran Çağrı Zili (Ding-Dong) - Harici ses dosyasına ihtiyaç duymayan saf Web Audio API sentezleyici
+// Restoran Çağrı Zili (Ding-Dong) - Web Audio API Sentezleyici
 export function playOrderSound() {
   try {
     const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -38,7 +38,7 @@ export function playOrderSound() {
     osc2.start(now + 0.18);
     osc2.stop(now + 1.1);
   } catch (e) {
-    console.log("Ses çalma izni bekleniyor:", e);
+    console.log("Ses çalma izni:", e);
   }
 }
 
@@ -56,23 +56,23 @@ export const orderService = {
       timeFormatted: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
     };
 
-    // Firebase Cloud Firestore'a Gönder
+    // Firebase Cloud Firestore'a Anında Gönder
     if (isFirebaseConfigured && db) {
       try {
         const docRef = await addDoc(collection(db, 'orders'), newOrder);
         newOrder.id = docRef.id;
-        console.log("✅ Sipariş buluta yazıldı. ID:", docRef.id);
+        console.log("🔥 Sipariş başarıyla Firebase bulutuna yazıldı! ID:", docRef.id);
       } catch (err) {
         console.error("Firestore sipariş kaydı hatası:", err);
       }
     }
 
-    // Yerel depolamaya da kaydet
+    // Yerel depolamaya da ekle
     const currentOrders = this.getLocalOrders();
     const updated = [newOrder, ...currentOrders];
     localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(updated));
 
-    // Yerel event fırlat
+    // Yerel event
     window.dispatchEvent(new CustomEvent('waffloq_new_order', { detail: newOrder }));
 
     return newOrder;
@@ -85,12 +85,15 @@ export const orderService = {
     // 1. Firebase Firestore Canlı Dinleyici
     if (isFirebaseConfigured && db) {
       try {
-        const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
+        const ordersCol = collection(db, 'orders');
+        const unsubscribe = onSnapshot(ordersCol, (snapshot) => {
           const cloudOrders = [];
-          snapshot.forEach((doc) => {
-            cloudOrders.push({ id: doc.id, ...doc.data() });
+          snapshot.forEach((docSnap) => {
+            cloudOrders.push({ id: docSnap.id, ...docSnap.data() });
           });
+
+          // En yeni siparişler en üstte görünsün (client-side sort)
+          cloudOrders.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
           // Eğer yeni bir sipariş eklendiyse ve ilk açılış değilse sesli uyarı ver
           if (!initialLoad) {
@@ -111,18 +114,17 @@ export const orderService = {
           localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(cloudOrders));
           onUpdate(cloudOrders);
         }, (error) => {
-          console.warn("Firestore canlı dinleyici hatası:", error);
-          // Hata durumunda yerel depoya dön
+          console.warn("Firestore canlı dinleyici uyarısı:", error);
           onUpdate(this.getLocalOrders());
         });
 
         return unsubscribe;
       } catch (e) {
-        console.error("Firestore listener kurulamadı:", e);
+        console.error("Firestore dinleyici başlatılamadı:", e);
       }
     }
 
-    // 2. Yerel Depo Fallback Dinleyicisi
+    // 2. Yerel Fallback Dinleyici
     onUpdate(this.getLocalOrders());
 
     const handleLocalEvent = (e) => {
