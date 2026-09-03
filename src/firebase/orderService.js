@@ -45,15 +45,17 @@ export function playOrderSound() {
 export const orderService = {
   // Yeni sipariş gönder (Buluta ve Yerel Depoya)
   async sendOrder(orderData) {
+    const now = new Date();
     const newOrder = {
       id: `ord-${Date.now()}`,
       tableNumber: orderData.tableNumber || 'Belirtilmedi',
       items: orderData.items || [],
       totalAmount: orderData.totalAmount || 0,
       totalCount: orderData.totalCount || 0,
-      status: 'pending', // 'pending' (Bekliyor) | 'preparing' (Hazırlanıyor) | 'completed' (Teslim Edildi)
-      createdAt: new Date().toISOString(),
-      timeFormatted: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
+      status: 'pending', // 'pending' (Bekliyor) | 'preparing' (Hazırlanıyor) | 'completed' (Teslim Edildi) | 'cancelled' (İptal Edildi)
+      createdAt: now.toISOString(),
+      orderDate: now.toLocaleDateString('tr-TR'), // "03.09.2026" günlük raporlama için
+      timeFormatted: now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })
     };
 
     // Firebase Cloud Firestore'a Anında Gönder
@@ -61,6 +63,7 @@ export const orderService = {
       try {
         const docRef = await addDoc(collection(db, 'orders'), newOrder);
         newOrder.id = docRef.id;
+        newOrder.firestoreId = docRef.id;
         console.log("🔥 Sipariş başarıyla Firebase bulutuna yazıldı! ID:", docRef.id);
       } catch (err) {
         console.error("Firestore sipariş kaydı hatası:", err);
@@ -89,13 +92,19 @@ export const orderService = {
         const unsubscribe = onSnapshot(ordersCol, (snapshot) => {
           const cloudOrders = [];
           snapshot.forEach((docSnap) => {
-            cloudOrders.push({ id: docSnap.id, ...docSnap.data() });
+            const data = docSnap.data();
+            cloudOrders.push({
+              ...data,
+              id: docSnap.id, // Firestore Document ID öncelikli
+              firestoreId: docSnap.id,
+              originalLocalId: data.id || docSnap.id
+            });
           });
 
-          // En yeni siparişler en üstte görünsün (client-side sort)
+          // En yeni siparişler en üstte görünsün
           cloudOrders.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
-          // Eğer yeni bir sipariş eklendiyse ve ilk açılış değilse sesli uyarı ver
+          // Yeni sipariş eklendiyse zil çal
           if (!initialLoad) {
             snapshot.docChanges().forEach((change) => {
               if (change.type === 'added') {
@@ -159,36 +168,57 @@ export const orderService = {
     return [];
   },
 
-  // Sipariş durumunu güncelle
+  // Sipariş durumunu güncelle ('pending' | 'preparing' | 'completed' | 'cancelled')
   async updateOrderStatus(orderId, newStatus) {
     if (isFirebaseConfigured && db) {
       try {
         await updateDoc(doc(db, 'orders', orderId), { status: newStatus });
-        console.log("✅ Bulut sipariş durumu güncellendi:", newStatus);
+        console.log("✅ Bulut sipariş durumu güncellendi:", orderId, newStatus);
       } catch (err) {
-        console.error("Firestore durum güncelleme hatası:", err);
+        console.warn("Doğrudan ID ile güncellenemedi, sorgulanıyor:", err);
+        try {
+          const snap = await getDocs(collection(db, 'orders'));
+          snap.forEach(async (d) => {
+            if (d.id === orderId || d.data().id === orderId) {
+              await updateDoc(doc(db, 'orders', d.id), { status: newStatus });
+            }
+          });
+        } catch (e) {
+          console.error("Firestore güncelleme hatası:", e);
+        }
       }
     }
 
     const currentOrders = this.getLocalOrders();
-    const updated = currentOrders.map(o => o.id === orderId ? { ...o, status: newStatus } : o);
+    const updated = currentOrders.map(o => (o.id === orderId || o.firestoreId === orderId || o.originalLocalId === orderId) ? { ...o, status: newStatus } : o);
     localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(updated));
     return updated;
   },
 
-  // Siparişi sil / tamamla
+  // Siparişi sil
   async deleteOrder(orderId) {
     if (isFirebaseConfigured && db) {
       try {
         await deleteDoc(doc(db, 'orders', orderId));
-        console.log("✅ Buluttan sipariş silindi.");
+        console.log("✅ Buluttan sipariş silindi:", orderId);
       } catch (err) {
-        console.error("Firestore sipariş silme hatası:", err);
+        console.warn("Doğrudan silinemedi, eşleşen belgeler taranıyor:", err);
+      }
+      try {
+        const snap = await getDocs(collection(db, 'orders'));
+        snap.forEach(async (d) => {
+          if (d.id === orderId || d.data().id === orderId || d.data().originalLocalId === orderId) {
+            await deleteDoc(doc(db, 'orders', d.id));
+            console.log("✅ Eşleşen belge Firestore'dan silindi:", d.id);
+          }
+        });
+      } catch (e) {
+        console.error("Firestore silme hatası:", e);
       }
     }
 
     const currentOrders = this.getLocalOrders();
-    const updated = currentOrders.filter(o => o.id !== orderId);
+    const updated = currentOrders.filter(o => o.id !== orderId && o.firestoreId !== orderId && o.originalLocalId !== orderId);
     localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(updated));
     return updated;
   },

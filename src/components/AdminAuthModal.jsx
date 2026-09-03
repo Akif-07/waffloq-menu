@@ -78,14 +78,6 @@ export default function AdminAuthModal({ isOpen, onClose, onSuccess }) {
             </div>
           )}
 
-          <div style={{
-            background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '12px',
-            padding: '8px 12px', marginBottom: '16px', fontSize: '11px', color: '#666',
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-          }}>
-            <span>Varsayılan Şifre:</span>
-            <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#0f3c3a', fontSize: '13px' }}>1453</span>
-          </div>
 
           <button
             type="submit"

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { SHOP_INFO } from '../data/defaultMenu';
 import { orderService, playOrderSound } from '../firebase/orderService';
@@ -16,10 +16,11 @@ export default function AdminPanel({
   onClose,
   onLogout
 }) {
-  const [activeTab, setActiveTab] = useState('orders'); // 'orders' | 'items' | 'add' | 'qr' | 'cloud' | 'security'
+  const [activeTab, setActiveTab] = useState('orders'); // 'orders' | 'history' | 'items' | 'add' | 'qr' | 'cloud' | 'security'
   const [orders, setOrders] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
+  const [historyDateFilter, setHistoryDateFilter] = useState('today'); // 'today' | 'all' | 'cancelled'
   
   // Yeni Sipariş Bildirim Banner'ı
   const [orderAlert, setOrderAlert] = useState({ show: false, table: '', amount: 0, time: '' });
@@ -34,7 +35,6 @@ export default function AdminPanel({
   const [cloudAppId, setCloudAppId] = useState(firebaseConfig.appId || '');
   const [cloudAuthDomain, setCloudAuthDomain] = useState(firebaseConfig.authDomain || 'waffloqmenu.firebaseapp.com');
   const [cloudStorageBucket, setCloudStorageBucket] = useState(firebaseConfig.storageBucket || 'waffloqmenu.appspot.com');
-  const [cloudMessage, setCloudMessage] = useState('');
 
   // Yeni ürün ekleme state
   const [newName, setNewName] = useState('');
@@ -56,14 +56,12 @@ export default function AdminPanel({
         setOrders(updatedOrders || []);
       },
       (newOrder) => {
-        // Zil çalındı, banner göster
         setOrderAlert({
           show: true,
           table: newOrder.tableNumber || '?',
           amount: newOrder.totalAmount || 0,
           time: newOrder.timeFormatted || 'Az önce'
         });
-        // 12 saniye sonra banner'ı otomatik kapat
         setTimeout(() => {
           setOrderAlert(prev => ({ ...prev, show: false }));
         }, 12000);
@@ -77,21 +75,75 @@ export default function AdminPanel({
     };
   }, []);
 
-  const updateOrderStatus = async (id, current) => {
-    const next = current === 'pending' ? 'preparing' : current === 'preparing' ? 'completed' : 'pending';
-    const updated = await orderService.updateOrderStatus(id, next);
+  // Aktif Siparişler (Bekleyen & Hazırlanan)
+  const activeOrders = useMemo(() => {
+    return orders.filter(o => o && (o.status === 'pending' || o.status === 'preparing'));
+  }, [orders]);
+
+  // Arşiv / Geçmiş Siparişler (Teslim Edilen & İptal Edilen)
+  const historyOrders = useMemo(() => {
+    return orders.filter(o => o && (o.status === 'completed' || o.status === 'cancelled'));
+  }, [orders]);
+
+  // Bugünün Tarihi
+  const todayStr = new Date().toLocaleDateString('tr-TR');
+
+  // Günlük İstatistikler (Bugünkü Ciro & Sipariş Sayıları)
+  const stats = useMemo(() => {
+    const todayOrders = orders.filter(o => {
+      if (!o) return false;
+      if (o.orderDate) return o.orderDate === todayStr;
+      if (o.createdAt) {
+        return new Date(o.createdAt).toLocaleDateString('tr-TR') === todayStr;
+      }
+      return false;
+    });
+
+    const completedToday = todayOrders.filter(o => o.status === 'completed');
+    const cancelledToday = todayOrders.filter(o => o.status === 'cancelled');
+    const todayRevenue = completedToday.reduce((sum, o) => sum + (Number(o.totalAmount) || 0), 0);
+
+    return {
+      todayTotalCount: todayOrders.length,
+      todayCompletedCount: completedToday.length,
+      todayCancelledCount: cancelledToday.length,
+      todayRevenue
+    };
+  }, [orders, todayStr]);
+
+  // Sipariş Durumu İlerletme (Bekliyor -> Hazırlanıyor -> Tamamlandı)
+  const handleAdvanceStatus = async (order) => {
+    const next = order.status === 'pending' ? 'preparing' : 'completed';
+    const updated = await orderService.updateOrderStatus(order.id, next);
     setOrders(updated || []);
   };
 
-  const deleteOrder = async (id) => {
-    if (confirm('Bu siparişi silmek istediğinize emin misiniz?')) {
-      const updated = await orderService.deleteOrder(id);
+  // Sipariş İptali (status: 'cancelled')
+  const handleCancelOrder = async (order) => {
+    if (confirm(`Masa #${order.tableNumber} siparişini İPTAL etmek istediğinize emin misiniz?`)) {
+      const updated = await orderService.updateOrderStatus(order.id, 'cancelled');
       setOrders(updated || []);
     }
   };
 
-  const clearAllOrders = async () => {
-    if (confirm('Tüm sipariş geçmişini silmek istiyor musunuz?')) {
+  // Siparişi Tekrar Aktife Alma (Geçmişten geri getirme)
+  const handleReactivateOrder = async (order) => {
+    const updated = await orderService.updateOrderStatus(order.id, 'pending');
+    setOrders(updated || []);
+    setActiveTab('orders');
+  };
+
+  // Siparişi Kalıcı Olarak Silme
+  const handleDeleteOrder = async (orderId) => {
+    if (confirm('Bu sipariş kaydı veritabanından kalıcı olarak silinecek. Emin misiniz?')) {
+      const updated = await orderService.deleteOrder(orderId);
+      setOrders(updated || []);
+    }
+  };
+
+  // Tüm Siparişleri Temizle
+  const handleClearAll = async () => {
+    if (confirm('Tüm aktif ve geçmiş siparişler veritabanından kalıcı olarak silinecek! Emin misiniz?')) {
       await orderService.clearAllOrders();
       setOrders([]);
     }
@@ -108,7 +160,7 @@ export default function AdminPanel({
       projectId: cloudProjectId.trim(),
       authDomain: cloudAuthDomain.trim() || `${cloudProjectId.trim()}.firebaseapp.com`,
       storageBucket: cloudStorageBucket.trim() || `${cloudProjectId.trim()}.appspot.com`,
-      appId: cloudAppId.trim() || "1:1234567890:web:abcdef"
+      appId: cloudAppId.trim() || "1:258128994674:web:420808d70786df7ab97deb"
     };
     saveFirebaseConfig(newConfig);
   };
@@ -155,6 +207,21 @@ export default function AdminPanel({
     return matchSearch && matchCat;
   });
 
+  // Filtrelenmiş Sipariş Geçmişi
+  const filteredHistoryOrders = useMemo(() => {
+    return historyOrders.filter(o => {
+      if (historyDateFilter === 'today') {
+        if (o.orderDate) return o.orderDate === todayStr;
+        if (o.createdAt) return new Date(o.createdAt).toLocaleDateString('tr-TR') === todayStr;
+        return true;
+      }
+      if (historyDateFilter === 'cancelled') {
+        return o.status === 'cancelled';
+      }
+      return true; // 'all'
+    });
+  }, [historyOrders, historyDateFilter, todayStr]);
+
   const pendingCount = orders.filter(o => o && o.status === 'pending').length;
   const preparingCount = orders.filter(o => o && o.status === 'preparing').length;
 
@@ -183,8 +250,7 @@ export default function AdminPanel({
           boxShadow: '0 8px 25px rgba(234, 88, 12, 0.4)',
           position: 'sticky',
           top: 0,
-          zIndex: 9999,
-          animation: 'pulse 1.5s infinite'
+          zIndex: 9999
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <span style={{ fontSize: '24px' }}>🔔</span>
@@ -287,7 +353,7 @@ export default function AdminPanel({
           </div>
         </div>
 
-        {/* Butonlar */}
+        {/* Hızlı Butonlar */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <button
             onClick={() => playOrderSound()}
@@ -360,6 +426,7 @@ export default function AdminPanel({
         overflowX: 'auto',
         boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
       }}>
+        {/* 1. Aktif Siparişler */}
         <button
           onClick={() => setActiveTab('orders')}
           style={{
@@ -377,7 +444,7 @@ export default function AdminPanel({
             whiteSpace: 'nowrap'
           }}
         >
-          <span>🔔 Masa Siparişleri ({orders.length})</span>
+          <span>🔔 Aktif Siparişler ({activeOrders.length})</span>
           {pendingCount > 0 && (
             <span style={{
               backgroundColor: '#ef4444',
@@ -392,6 +459,28 @@ export default function AdminPanel({
           )}
         </button>
 
+        {/* 2. Sipariş Geçmişi & Rapor */}
+        <button
+          onClick={() => setActiveTab('history')}
+          style={{
+            padding: '16px 20px',
+            fontSize: '14px',
+            fontWeight: 800,
+            border: 'none',
+            background: 'none',
+            cursor: 'pointer',
+            borderBottom: activeTab === 'history' ? '3px solid #23958e' : '3px solid transparent',
+            color: activeTab === 'history' ? '#0f3c3a' : '#64748b',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          <span>📜 Sipariş Geçmişi & Günlük Rapor ({historyOrders.length})</span>
+        </button>
+
+        {/* 3. Menü & Fiyat */}
         <button
           onClick={() => setActiveTab('items')}
           style={{
@@ -409,6 +498,7 @@ export default function AdminPanel({
           📋 Menü & Fiyat Listesi ({items.length})
         </button>
 
+        {/* 4. Yeni Ürün Ekle */}
         <button
           onClick={() => setActiveTab('add')}
           style={{
@@ -426,6 +516,7 @@ export default function AdminPanel({
           ➕ Yeni Ürün Ekle
         </button>
 
+        {/* 5. Masa QR Kod & Stand */}
         <button
           onClick={() => setActiveTab('qr')}
           style={{
@@ -440,9 +531,10 @@ export default function AdminPanel({
             whiteSpace: 'nowrap'
           }}
         >
-          📱 Masa QR Kod & Stand Üretici
+          📱 Masa QR Kod & Stand
         </button>
 
+        {/* 6. Bulut Bağlantısı */}
         <button
           onClick={() => setActiveTab('cloud')}
           style={{
@@ -461,18 +553,9 @@ export default function AdminPanel({
           }}
         >
           <span>🔥 Bulut Bağlantısı</span>
-          <span style={{
-            fontSize: '10px',
-            backgroundColor: isFirebaseConfigured ? '#dcfce7' : '#fef3c7',
-            color: isFirebaseConfigured ? '#166534' : '#92400e',
-            padding: '2px 6px',
-            borderRadius: '6px',
-            fontWeight: 800
-          }}>
-            {isFirebaseConfigured ? 'Aktif' : 'Ayarla'}
-          </span>
         </button>
 
+        {/* 7. Şifre Ayarları */}
         <button
           onClick={() => setActiveTab('security')}
           style={{
@@ -494,9 +577,59 @@ export default function AdminPanel({
       {/* İÇERİK ALANI */}
       <main style={{ flex: 1, padding: '24px', maxWidth: '1400px', width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
         
-        {/* 1. SEKME: CANLI SİPARİŞLER (MUTFAK EKRANI) */}
+        {/* 1. SEKME: AKTİF SİPARİŞLER (MUTFAK EKRANI - SADECE BEKLEYEN VE HAZIRLANANLAR) */}
         {activeTab === 'orders' && (
           <div>
+            {/* GÜNLÜK KASA & CİRO ÖZET ÇUBUĞU */}
+            <div style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '20px',
+              padding: '16px 24px',
+              border: '1px solid #e2e8f0',
+              marginBottom: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '16px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.03)'
+            }}>
+              <div>
+                <span style={{ fontSize: '12px', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  📊 Bugünkü Restoran Özeti ({todayStr}):
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginTop: '6px', flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: '14px' }}>
+                    <span style={{ color: '#64748b' }}>Toplam Sipariş: </span>
+                    <strong style={{ color: '#0f3c3a' }}>{stats.todayTotalCount} Adet</strong>
+                  </div>
+                  <div style={{ fontSize: '14px' }}>
+                    <span style={{ color: '#64748b' }}>Teslim Edilen: </span>
+                    <strong style={{ color: '#166534' }}>{stats.todayCompletedCount} Adet</strong>
+                  </div>
+                  <div style={{ fontSize: '14px' }}>
+                    <span style={{ color: '#64748b' }}>İptal Edilen: </span>
+                    <strong style={{ color: '#dc2626' }}>{stats.todayCancelledCount} Adet</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{
+                backgroundColor: '#f0fdf4',
+                border: '2px solid #bbf7d0',
+                padding: '10px 20px',
+                borderRadius: '16px',
+                textAlign: 'right'
+              }}>
+                <span style={{ fontSize: '11px', fontWeight: 800, color: '#166534', textTransform: 'uppercase' }}>
+                  Bugünkü Toplam Ciro:
+                </span>
+                <div style={{ fontSize: '22px', fontWeight: 900, color: '#15803d' }}>
+                  {stats.todayRevenue} TL
+                </div>
+              </div>
+            </div>
+
             <div style={{
               display: 'flex',
               alignItems: 'center',
@@ -507,12 +640,10 @@ export default function AdminPanel({
             }}>
               <div>
                 <h2 style={{ fontSize: '20px', fontWeight: 900, margin: 0, color: '#0f3c3a' }}>
-                  Masalardan Gelen Anlık Siparişler
+                  Masalardan Gelen Aktif Siparişler ({activeOrders.length})
                 </h2>
                 <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#64748b' }}>
-                  {isFirebaseConfigured
-                    ? '🟢 Firebase Bulut Canlı Dinleniyor (onSnapshot): Müşteriler masadan sipariş verdiği saniyede zil çalar ve buraya düşer.'
-                    : '🟡 Yerel Mod: Siparişlerin farklı cihazlar arasında canlı senkronize olması için "Bulut Bağlantısı" sekmesini açınız.'}
+                  Masaya teslim edilen veya iptal edilen siparişler otomatik olarak "Sipariş Geçmişi" sekmesine taşınır.
                 </p>
               </div>
 
@@ -520,27 +651,10 @@ export default function AdminPanel({
                 <span style={{ fontSize: '12px', fontWeight: 700, color: '#64748b' }}>
                   Bekleyen: <strong style={{ color: '#d97706' }}>{pendingCount}</strong> | Hazırlanan: <strong style={{ color: '#2563eb' }}>{preparingCount}</strong>
                 </span>
-                {orders.length > 0 && (
-                  <button
-                    onClick={clearAllOrders}
-                    style={{
-                      backgroundColor: '#fee2e2',
-                      color: '#dc2626',
-                      border: '1px solid #fca5a5',
-                      borderRadius: '10px',
-                      padding: '8px 14px',
-                      fontSize: '12px',
-                      fontWeight: 700,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    🗑 Tümünü Temizle
-                  </button>
-                )}
               </div>
             </div>
 
-            {orders.length === 0 ? (
+            {activeOrders.length === 0 ? (
               <div style={{
                 backgroundColor: '#ffffff',
                 borderRadius: '24px',
@@ -550,12 +664,26 @@ export default function AdminPanel({
               }}>
                 <div style={{ fontSize: '56px', marginBottom: '14px' }}>🔔</div>
                 <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#0f3c3a', margin: '0 0 6px 0' }}>
-                  Şu Anda Bekleyen Sipariş Yok
+                  Şu Anda Bekleyen Aktif Sipariş Yok
                 </h3>
                 <p style={{ fontSize: '13px', color: '#64748b', maxWidth: '460px', margin: '0 auto' }}>
-                  Müşteriler masalarından QR kodla sipariş verdikçe zil çalarak ekrana düşecektir.
+                  Tüm siparişler teslim edildi veya bekleyen çağrı yok. Müşteriler QR kodla sipariş verdikçe zil çalarak buraya düşecektir.
                 </p>
-                <div style={{ marginTop: '16px' }}>
+                <div style={{ marginTop: '16px', display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                  <button
+                    onClick={() => setActiveTab('history')}
+                    style={{
+                      backgroundColor: '#f1f5f9',
+                      border: '1px solid #cbd5e1',
+                      padding: '8px 16px',
+                      borderRadius: '10px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    📜 Sipariş Geçmişini Görüntüle ({historyOrders.length})
+                  </button>
                   <button
                     onClick={() => playOrderSound()}
                     style={{
@@ -568,7 +696,7 @@ export default function AdminPanel({
                       cursor: 'pointer'
                     }}
                   >
-                    🔊 Zil Sesini Dinle (Test)
+                    🔊 Zili Test Et
                   </button>
                 </div>
               </div>
@@ -578,7 +706,7 @@ export default function AdminPanel({
                 gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
                 gap: '18px'
               }}>
-                {orders.map(order => {
+                {activeOrders.map(order => {
                   if (!order) return null;
                   const isPending = order.status === 'pending';
                   const isPreparing = order.status === 'preparing';
@@ -629,8 +757,9 @@ export default function AdminPanel({
                             </span>
                           </div>
 
+                          {/* Kalıcı Silme Butonu */}
                           <button
-                            onClick={() => deleteOrder(order.id)}
+                            onClick={() => handleDeleteOrder(order.id)}
                             style={{
                               backgroundColor: '#fef2f2',
                               color: '#ef4444',
@@ -640,7 +769,7 @@ export default function AdminPanel({
                               cursor: 'pointer',
                               fontSize: '13px'
                             }}
-                            title="Siparişi Sil"
+                            title="Veritabanından Tamamen Sil"
                           >
                             🗑
                           </button>
@@ -688,7 +817,7 @@ export default function AdminPanel({
                         </div>
                       </div>
 
-                      {/* Alt Tutar & Durum Değiştirme Butonu */}
+                      {/* Alt Tutar & İlerleme / İptal Butonları */}
                       <div>
                         <div style={{
                           display: 'flex',
@@ -704,23 +833,44 @@ export default function AdminPanel({
                           </span>
                         </div>
 
-                        <button
-                          onClick={() => updateOrderStatus(order.id, order.status)}
-                          style={{
-                            width: '100%',
-                            padding: '12px',
-                            borderRadius: '12px',
-                            border: 'none',
-                            fontSize: '13px',
-                            fontWeight: 800,
-                            cursor: 'pointer',
-                            backgroundColor: isPending ? '#f59e0b' : isPreparing ? '#3b82f6' : '#10b981',
-                            color: '#ffffff',
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-                          }}
-                        >
-                          {isPending ? '⏳ Siparişi Onayla & Hazırla' : isPreparing ? '🍳 Hazırlandı • Masaya Teslim Et' : '✅ Tamamlandı (Arşivle)'}
-                        </button>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {/* Durum İlerleme Butonu */}
+                          <button
+                            onClick={() => handleAdvanceStatus(order)}
+                            style={{
+                              width: '100%',
+                              padding: '12px',
+                              borderRadius: '12px',
+                              border: 'none',
+                              fontSize: '13px',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              backgroundColor: isPending ? '#f59e0b' : '#10b981',
+                              color: '#ffffff',
+                              boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                            }}
+                          >
+                            {isPending ? '⏳ Siparişi Onayla & Hazırla' : '✅ Masaya Teslim Edildi (Arşivle)'}
+                          </button>
+
+                          {/* Siparişi İptal Et Butonu */}
+                          <button
+                            onClick={() => handleCancelOrder(order)}
+                            style={{
+                              width: '100%',
+                              padding: '8px',
+                              borderRadius: '10px',
+                              border: '1px solid #fca5a5',
+                              backgroundColor: '#fff',
+                              fontSize: '12px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              color: '#dc2626'
+                            }}
+                          >
+                            ❌ Siparişi İptal Et
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -730,7 +880,284 @@ export default function AdminPanel({
           </div>
         )}
 
-        {/* 2. SEKME: ÜRÜN & FİYAT LİSTESİ */}
+        {/* 2. SEKME: 📜 SİPARİŞ GEÇMİŞİ & GÜNLÜK RAPOR */}
+        {activeTab === 'history' && (
+          <div>
+            {/* Üst Rapor Kartı */}
+            <div style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '24px',
+              padding: '24px',
+              border: '1px solid #e2e8f0',
+              marginBottom: '24px',
+              boxShadow: '0 4px 14px rgba(0,0,0,0.03)'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '16px' }}>
+                <div>
+                  <h3 style={{ fontSize: '20px', fontWeight: 900, color: '#0f3c3a', margin: 0 }}>
+                    📜 Sipariş Geçmişi & Kasa Raporu
+                  </h3>
+                  <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#64748b' }}>
+                    Tamamlanan ve iptal edilen tüm siparişlerin kayıtları burada saklanır.
+                  </p>
+                </div>
+
+                {historyOrders.length > 0 && (
+                  <button
+                    onClick={handleClearAll}
+                    style={{
+                      backgroundColor: '#fee2e2',
+                      color: '#dc2626',
+                      border: '1px solid #fca5a5',
+                      borderRadius: '10px',
+                      padding: '8px 16px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🗑 Tüm Geçmişi Temizle
+                  </button>
+                )}
+              </div>
+
+              {/* İstatistik Kutuları */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gap: '14px'
+              }}>
+                <div style={{ backgroundColor: '#f0fdf4', border: '2px solid #bbf7d0', borderRadius: '16px', padding: '16px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 800, color: '#166534', textTransform: 'uppercase' }}>
+                    Bugünkü Toplam Ciro:
+                  </span>
+                  <div style={{ fontSize: '24px', fontWeight: 900, color: '#15803d', marginTop: '4px' }}>
+                    {stats.todayRevenue} TL
+                  </div>
+                </div>
+
+                <div style={{ backgroundColor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '16px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 800, color: '#475569', textTransform: 'uppercase' }}>
+                    Bugünkü Toplam Sipariş:
+                  </span>
+                  <div style={{ fontSize: '24px', fontWeight: 900, color: '#0f172a', marginTop: '4px' }}>
+                    {stats.todayTotalCount} Adet
+                  </div>
+                </div>
+
+                <div style={{ backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '16px', padding: '16px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 800, color: '#166534', textTransform: 'uppercase' }}>
+                    Teslim Edilen:
+                  </span>
+                  <div style={{ fontSize: '24px', fontWeight: 900, color: '#166534', marginTop: '4px' }}>
+                    {stats.todayCompletedCount} Adet
+                  </div>
+                </div>
+
+                <div style={{ backgroundColor: '#fef2f2', border: '1px solid #fecaca', borderRadius: '16px', padding: '16px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 800, color: '#991b1b', textTransform: 'uppercase' }}>
+                    İptal Edilen:
+                  </span>
+                  <div style={{ fontSize: '24px', fontWeight: 900, color: '#dc2626', marginTop: '4px' }}>
+                    {stats.todayCancelledCount} Adet
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Filtreleme Butonları */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setHistoryDateFilter('today')}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '10px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  border: 'none',
+                  backgroundColor: historyDateFilter === 'today' ? '#0f3c3a' : '#ffffff',
+                  color: historyDateFilter === 'today' ? '#ffffff' : '#475569',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                }}
+              >
+                📅 Bugün ({todayStr})
+              </button>
+              <button
+                onClick={() => setHistoryDateFilter('all')}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '10px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  border: 'none',
+                  backgroundColor: historyDateFilter === 'all' ? '#0f3c3a' : '#ffffff',
+                  color: historyDateFilter === 'all' ? '#ffffff' : '#475569',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                }}
+              >
+                Tüm Geçmiş ({historyOrders.length})
+              </button>
+              <button
+                onClick={() => setHistoryDateFilter('cancelled')}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '10px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  border: 'none',
+                  backgroundColor: historyDateFilter === 'cancelled' ? '#dc2626' : '#ffffff',
+                  color: historyDateFilter === 'cancelled' ? '#ffffff' : '#475569',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                }}
+              >
+                🚫 İptal Edilenler
+              </button>
+            </div>
+
+            {/* Geçmiş Sipariş Listesi */}
+            {filteredHistoryOrders.length === 0 ? (
+              <div style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '20px',
+                padding: '50px 20px',
+                textAlign: 'center',
+                border: '1px solid #e2e8f0'
+              }}>
+                <div style={{ fontSize: '44px', marginBottom: '10px' }}>📜</div>
+                <h4 style={{ fontSize: '16px', fontWeight: 800, color: '#0f3c3a', margin: '0 0 4px 0' }}>
+                  Kayıtlı Geçmiş Sipariş Bulunmuyor
+                </h4>
+                <p style={{ fontSize: '12px', color: '#64748b' }}>
+                  Masaya teslim edilen veya iptal edilen siparişler burada kalıcı olarak arşivlenir.
+                </p>
+              </div>
+            ) : (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
+                gap: '16px'
+              }}>
+                {filteredHistoryOrders.map(order => {
+                  const isCancelled = order.status === 'cancelled';
+                  return (
+                    <div
+                      key={order.id}
+                      style={{
+                        backgroundColor: '#ffffff',
+                        borderRadius: '20px',
+                        padding: '18px',
+                        border: isCancelled ? '2px solid #fca5a5' : '1px solid #cbd5e1',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.03)'
+                      }}
+                    >
+                      <div>
+                        {/* Başlık ve Durum */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', paddingBottom: '10px', borderBottom: '1px solid #f1f5f9' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{
+                              backgroundColor: '#0f3c3a',
+                              color: '#ffffff',
+                              fontWeight: 900,
+                              fontSize: '13px',
+                              padding: '4px 10px',
+                              borderRadius: '10px'
+                            }}>
+                              MASA #{order.tableNumber}
+                            </span>
+                            <span style={{ fontSize: '11px', color: '#64748b' }}>
+                              {order.orderDate || ''} • {order.timeFormatted || ''}
+                            </span>
+                          </div>
+
+                          <span style={{
+                            padding: '4px 10px',
+                            borderRadius: '8px',
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            backgroundColor: isCancelled ? '#fee2e2' : '#dcfce7',
+                            color: isCancelled ? '#dc2626' : '#166534'
+                          }}>
+                            {isCancelled ? '🚫 İptal Edildi' : '✅ Teslim Edildi'}
+                          </span>
+                        </div>
+
+                        {/* Kalemler */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
+                          {(Array.isArray(order.items) ? order.items : []).map((item, idx) => (
+                            <div key={idx} style={{ fontSize: '12px', display: 'flex', justifyContent: 'space-between' }}>
+                              <span><strong>{item.quantity || 1}x</strong> {item.name}</span>
+                              <span style={{ fontWeight: 700, color: '#475569' }}>{(item.price || 0) * (item.quantity || 1)} TL</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Alt Bölüm: Toplam ve Butonlar */}
+                      <div>
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          paddingTop: '8px',
+                          borderTop: '1px solid #f1f5f9',
+                          marginBottom: '10px'
+                        }}>
+                          <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>Tutar:</span>
+                          <span style={{ fontSize: '16px', fontWeight: 900, color: isCancelled ? '#94a3b8' : '#0f3c3a', textDecoration: isCancelled ? 'line-through' : 'none' }}>
+                            {order.totalAmount || 0} TL
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            onClick={() => handleReactivateOrder(order)}
+                            style={{
+                              flex: 1,
+                              padding: '8px',
+                              borderRadius: '10px',
+                              border: '1px solid #cbd5e1',
+                              backgroundColor: '#f8fafc',
+                              fontSize: '11px',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              color: '#334155'
+                            }}
+                          >
+                            🔄 Tekrar Aktife Al
+                          </button>
+
+                          <button
+                            onClick={() => handleDeleteOrder(order.id)}
+                            style={{
+                              padding: '8px 12px',
+                              borderRadius: '10px',
+                              border: '1px solid #fca5a5',
+                              backgroundColor: '#fef2f2',
+                              fontSize: '12px',
+                              cursor: 'pointer',
+                              color: '#dc2626'
+                            }}
+                            title="Veritabanından Kalıcı Olarak Sil"
+                          >
+                            🗑 Sil
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 3. SEKME: ÜRÜN & FİYAT LİSTESİ */}
         {activeTab === 'items' && (
           <div>
             {/* Filtre ve Arama */}
@@ -875,7 +1302,7 @@ export default function AdminPanel({
                         {item.name}
                       </h4>
                       <div style={{ fontSize: '11px', color: '#64748b' }}>
-                        {item.categoryId === 'drinks' ? '🥤 İçecek' : '🧇 Waffle'}
+                        {item.categoryId === 'drinks' ? '🥤 İçecek' : item.categoryId === 'menus' ? '🍽️ Menü' : '🧇 Waffle'}
                       </div>
                     </div>
                   </div>
@@ -971,7 +1398,7 @@ export default function AdminPanel({
           </div>
         )}
 
-        {/* 3. SEKME: YENİ ÜRÜN EKLE */}
+        {/* 4. SEKME: YENİ ÜRÜN EKLE */}
         {activeTab === 'add' && (
           <div style={{
             maxWidth: '680px',
@@ -1122,7 +1549,7 @@ export default function AdminPanel({
           </div>
         )}
 
-        {/* 4. SEKME: MASA QR KODLARI & STAND ÜRETİCİ */}
+        {/* 5. SEKME: MASA QR KODLARI & STAND ÜRETİCİ */}
         {activeTab === 'qr' && (
           <div style={{
             maxWidth: '640px',
@@ -1286,7 +1713,7 @@ export default function AdminPanel({
           </div>
         )}
 
-        {/* 5. SEKME: 🔥 BULUT BAĞLANTISI (CİHAZLAR ARASI SENKRONİZASYON) */}
+        {/* 6. SEKME: 🔥 BULUT BAĞLANTISI */}
         {activeTab === 'cloud' && (
           <div style={{
             maxWidth: '680px',
@@ -1375,27 +1802,8 @@ export default function AdminPanel({
                   </button>
                 </div>
               </div>
-            ) : (
-              <div style={{
-                backgroundColor: '#fffbeb',
-                border: '2px solid #fef3c7',
-                borderRadius: '16px',
-                padding: '18px',
-                marginBottom: '24px',
-                fontSize: '13px',
-                color: '#92400e',
-                lineHeight: '1.6'
-              }}>
-                <strong style={{ display: 'block', marginBottom: '4px', fontSize: '14px' }}>
-                  📌 Firebase Firestore'u 3 Adımda Bağlayın (Ücretsiz):
-                </strong>
-                1. <strong>Firebase Console</strong>'a (<a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" style={{ color: '#b45309', fontWeight: 800 }}>console.firebase.google.com</a>) gidin ve <code>waffloqmenu</code> projenizi açın.<br />
-                2. Sol menüden <strong>Build ➔ Firestore Database</strong>'e tıklayıp veritabanını oluşturun (Test modunda başlatın).<br />
-                3. Sol üstteki <strong>Proje Ayarları (Çark İkonu) ➔ Genel ➔ Uygulamalarınız (Web SDK)</strong> alanındaki bilgileri aşağıdaki kutulara yapıştırıp <strong>"Bulutu Bağla"</strong> butonuna basın!
-              </div>
-            )}
+            ) : null}
 
-            {/* Bağlantı Formu */}
             <form onSubmit={handleSaveCloudConfig}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
                 <div>
@@ -1500,13 +1908,13 @@ export default function AdminPanel({
                   boxShadow: '0 4px 14px rgba(15, 60, 58, 0.25)'
                 }}
               >
-                🔥 Bulut Bağlantısını Kaydet ve Etkinleştir
+                🔥 Bulut Bağlantısını Güncelle
               </button>
             </form>
           </div>
         )}
 
-        {/* 6. SEKME: ŞİFRE AYARLARI */}
+        {/* 7. SEKME: ŞİFRE AYARLARI */}
         {activeTab === 'security' && (
           <div style={{
             maxWidth: '480px',
@@ -1530,7 +1938,7 @@ export default function AdminPanel({
               <input
                 type="text"
                 required
-                placeholder="Örn: 1453 veya 4 haneli yeni şifre"
+                placeholder="Örn: 4 haneli yeni şifre"
                 value={newPin}
                 onChange={(e) => setNewPin(e.target.value)}
                 style={{
