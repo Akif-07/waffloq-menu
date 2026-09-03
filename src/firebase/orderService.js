@@ -53,6 +53,7 @@ export const orderService = {
       totalAmount: orderData.totalAmount || 0,
       totalCount: orderData.totalCount || 0,
       status: 'pending', // 'pending' (Bekliyor) | 'preparing' (Hazırlanıyor) | 'completed' (Teslim Edildi) | 'cancelled' (İptal Edildi)
+      orderNote: orderData.orderNote || '',
       createdAt: now.toISOString(),
       orderDate: now.toLocaleDateString('tr-TR'), // "03.09.2026" günlük raporlama için
       timeFormatted: now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })

@@ -289,17 +289,18 @@ export default function ProductDetailModal({
             </div>
           </div>
 
-          {/* Mutfak Notu Alanı */}
-          <div className="p-4 sm:p-5 bg-stone-50/50">
-            <label className="block text-xs font-bold text-stone-700 mb-1.5">
-              Mutfak Notu (İsteğe bağlı):
+          {/* Müşteri Ürün Notu Alanı */}
+          <div className="p-4 sm:p-5 bg-amber-50/80 border-t-2 border-amber-200">
+            <label className="block text-xs font-black text-amber-950 mb-1.5 flex items-center gap-1.5">
+              <span className="text-sm">✍️</span>
+              <span>Bu Ürüne Özel Notunuz (İsteğe bağlı):</span>
             </label>
             <input
               type="text"
-              placeholder="Örn: Bol peçete rica, çatallı servis..."
+              placeholder="Örn: Hamuru çıtır olsun, çikolatası bol olsun..."
               value={specialNote}
               onChange={(e) => setSpecialNote(e.target.value)}
-              className="w-full p-3 rounded-xl border border-stone-200 text-xs focus:outline-none focus:ring-2 focus:ring-stone-900 bg-white"
+              className="w-full p-3 rounded-xl border border-amber-300 text-xs font-medium text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white"
             />
           </div>
         </div>

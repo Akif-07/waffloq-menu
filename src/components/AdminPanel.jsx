@@ -86,6 +86,14 @@ export function printThermalReceipt(order) {
           ${itemsHtml}
         </div>
 
+        ${order.orderNote ? `
+          <div style="font-size: 12px; margin: 4px 0;">================================</div>
+          <div style="border: 2px solid #000; padding: 6px; margin: 4px 0; background: #fff;">
+            <div style="font-weight: 900; font-size: 13px; text-align: center; text-decoration: underline;">*** MÜŞTERİ NOTU ***</div>
+            <div style="font-size: 13px; font-weight: bold; margin-top: 4px; word-break: break-word;">"${order.orderNote}"</div>
+          </div>
+        ` : ''}
+
         <div style="font-size: 12px; margin: 4px 0;">================================</div>
         <div class="row bold" style="font-size: 18px; margin: 6px 0;">
           <span>TOPLAM :</span>
@@ -998,6 +1006,26 @@ export default function AdminPanel({
                           </div>
                         </div>
 
+                        {/* 📌 ÇOK BELİRGİN VE AYRI MÜŞTERİ NOTU KUTUSU */}
+                        {order.orderNote && (
+                          <div style={{
+                            backgroundColor: '#fef3c7',
+                            border: '2px solid #f59e0b',
+                            borderRadius: '12px',
+                            padding: '10px 14px',
+                            marginBottom: '12px',
+                            boxShadow: '0 2px 8px rgba(245, 158, 11, 0.15)'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#92400e', fontWeight: 900, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '3px' }}>
+                              <span style={{ fontSize: '14px' }}>📝</span>
+                              <span>MÜŞTERİ SİPARİŞ NOTU:</span>
+                            </div>
+                            <div style={{ fontSize: '13px', fontWeight: 800, color: '#78350f', lineHeight: '1.4' }}>
+                              "{order.orderNote}"
+                            </div>
+                          </div>
+                        )}
+
                         {/* Sipariş Kalemleri */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
                           {(Array.isArray(order.items) ? order.items : []).map((item, idx) => (
@@ -1333,6 +1361,25 @@ export default function AdminPanel({
                             {isCancelled ? '🚫 İptal Edildi' : '✅ Teslim Edildi'}
                           </span>
                         </div>
+
+                        {/* 📌 ÇOK BELİRGİN VE AYRI MÜŞTERİ NOTU KUTUSU */}
+                        {order.orderNote && (
+                          <div style={{
+                            backgroundColor: '#fef3c7',
+                            border: '1px solid #f59e0b',
+                            borderRadius: '10px',
+                            padding: '8px 12px',
+                            marginBottom: '10px'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#92400e', fontWeight: 900, fontSize: '11px', textTransform: 'uppercase', marginBottom: '2px' }}>
+                              <span>📝</span>
+                              <span>Müşteri Notu:</span>
+                            </div>
+                            <div style={{ fontSize: '12px', fontWeight: 700, color: '#78350f', lineHeight: '1.3' }}>
+                              "{order.orderNote}"
+                            </div>
+                          </div>
+                        )}
 
                         {/* Kalemler */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>

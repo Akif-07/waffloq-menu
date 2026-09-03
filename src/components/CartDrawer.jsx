@@ -13,6 +13,7 @@ export default function CartDrawer({
 }) {
   const [orderSent, setOrderSent] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [customerNote, setCustomerNote] = useState('');
 
   const totalAmount = cartItems.reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0);
   const totalCount = cartItems.reduce((sum, item) => sum + (item.quantity || 1), 0);
@@ -24,7 +25,8 @@ export default function CartDrawer({
         tableNumber: tableNumber || 'Belirtilmedi',
         items: cartItems,
         totalAmount,
-        totalCount
+        totalCount,
+        orderNote: customerNote.trim()
       });
       setOrderSent(true);
     } catch (err) {
@@ -85,6 +87,7 @@ export default function CartDrawer({
             <button
               onClick={() => {
                 setOrderSent(false);
+                setCustomerNote('');
                 onClearCart();
                 onClose();
               }}
@@ -118,8 +121,8 @@ export default function CartDrawer({
                         {item.name}
                       </h5>
                       {item.specialNote && (
-                        <p className="text-[10px] text-waffloq-800 bg-waffloq-50 border border-waffloq-200 rounded px-1.5 py-0.5 mt-1 inline-block">
-                          Not: {item.specialNote}
+                        <p className="text-[10px] text-waffloq-800 bg-waffloq-50 border border-waffloq-200 rounded px-1.5 py-0.5 mt-1 inline-block font-semibold">
+                          {item.specialNote}
                         </p>
                       )}
                       <div className="font-black text-waffloq-700 text-xs sm:text-sm mt-1">
@@ -149,9 +152,24 @@ export default function CartDrawer({
               )}
             </div>
 
-            {/* Alt Kısım: Özet & Sipariş Ver */}
+            {/* Alt Kısım: Müşteri Notu, Özet & Sipariş Ver */}
             {cartItems.length > 0 && (
               <div className="p-4 bg-waffloq-50/70 border-t border-waffloq-200 space-y-3">
+                {/* 📝 ÇOK BELİRGİN MÜŞTERİ NOTU KUTUSU */}
+                <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-3 shadow-xs">
+                  <div className="flex items-center gap-1.5 text-xs font-black text-amber-950 mb-1.5">
+                    <span className="text-sm">✍️</span>
+                    <span>Sipariş / Mutfak Notunuz:</span>
+                  </div>
+                  <textarea
+                    rows={2}
+                    value={customerNote}
+                    onChange={(e) => setCustomerNote(e.target.value)}
+                    placeholder="Örn: Bol peçete rica, çatallı servis, içecekler soğuk olsun..."
+                    className="w-full p-2.5 rounded-xl border border-amber-200 text-xs text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white resize-none font-medium"
+                  />
+                </div>
+
                 <div className="flex justify-between items-center text-xs text-stone-600">
                   <span>Toplam Ürün:</span>
                   <span className="font-bold text-waffloq-900">{totalCount} Adet</span>
