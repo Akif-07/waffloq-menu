@@ -1,21 +1,17 @@
 import React, { useState } from 'react';
-import { X, Lock, AlertCircle, ArrowRight } from 'lucide-react';
 
-export default function AdminAuthModal({
-  isOpen,
-  onClose,
-  onSuccess
-}) {
+export default function AdminAuthModal({ isOpen, onClose, onSuccess }) {
   const [pin, setPin] = useState('');
   const [error, setError] = useState(false);
 
   if (!isOpen) return null;
 
-  const currentPin = localStorage.getItem('waffloq_admin_pin') || '1453';
+  const savedPin = localStorage.getItem('waffloq_admin_pin') || '1453';
 
-  const handleVerify = (inputPin) => {
-    const checkPin = (inputPin !== undefined ? inputPin : pin).trim();
-    if (checkPin === currentPin || checkPin === 'waffloq123' || checkPin === '1453') {
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const entered = pin.trim();
+    if (entered === savedPin || entered === 'waffloq123' || entered === '1453') {
       setError(false);
       setPin('');
       onSuccess();
@@ -24,64 +20,82 @@ export default function AdminAuthModal({
     }
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    handleVerify();
-  };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-waffloq-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl max-w-sm w-full p-6 text-stone-800 shadow-2xl relative border border-waffloq-200 text-center">
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(8,37,36,0.85)', backdropFilter: 'blur(8px)',
+      padding: '16px', fontFamily: 'system-ui, sans-serif'
+    }}>
+      <div style={{
+        background: '#fff', borderRadius: '24px', maxWidth: '380px', width: '100%',
+        padding: '32px 28px', textAlign: 'center', position: 'relative',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.3)', border: '2px solid #d5f2ef'
+      }}>
+        {/* Kapat */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-1.5 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-500 transition-colors"
-        >
-          <X className="w-4 h-4" />
-        </button>
+          style={{
+            position: 'absolute', top: '16px', right: '16px',
+            background: '#f5f5f5', border: 'none', borderRadius: '50%',
+            width: '32px', height: '32px', cursor: 'pointer', fontSize: '16px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#888'
+          }}
+        >✕</button>
 
-        <div className="w-14 h-14 rounded-2xl bg-waffloq-100 text-waffloq-700 flex items-center justify-center mx-auto mb-4">
-          <Lock className="w-7 h-7" />
-        </div>
-
-        <h3 className="text-lg font-black text-waffloq-950 mb-1">Dükkan Sahibi Girişi</h3>
-        <p className="text-xs text-stone-500 mb-5">
+        <div style={{ fontSize: '48px', marginBottom: '8px' }}>🔐</div>
+        <h3 style={{ fontSize: '20px', fontWeight: 900, color: '#0f3c3a', marginBottom: '4px' }}>
+          Dükkan Sahibi Girişi
+        </h3>
+        <p style={{ fontSize: '12px', color: '#888', marginBottom: '24px' }}>
           Fiyatları ve menüyü düzenlemek için yönetici şifrenizi giriniz.
         </p>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <input
-              type="password"
-              autoFocus
-              maxLength={12}
-              placeholder="Yönetici Şifresi"
-              value={pin}
-              onChange={(e) => {
-                setPin(e.target.value);
-                if (error) setError(false);
-              }}
-              className="w-full text-center tracking-widest text-lg font-black py-3 px-4 rounded-2xl bg-waffloq-50 border border-waffloq-200 focus:outline-none focus:ring-2 focus:ring-waffloq-500"
-            />
-          </div>
+        <form onSubmit={handleSubmit}>
+          <input
+            type="password"
+            autoFocus
+            maxLength={20}
+            placeholder="Yönetici Şifresi"
+            value={pin}
+            onChange={(e) => { setPin(e.target.value); setError(false); }}
+            style={{
+              width: '100%', textAlign: 'center', letterSpacing: '0.2em',
+              fontSize: '20px', fontWeight: 900, padding: '14px 16px',
+              borderRadius: '16px', border: '2px solid ' + (error ? '#ef4444' : '#d5f2ef'),
+              background: '#edf9f8', outline: 'none', boxSizing: 'border-box',
+              marginBottom: '12px'
+            }}
+          />
 
           {error && (
-            <div className="flex items-center justify-center gap-1.5 text-xs text-berry font-bold bg-rose-50 py-2 px-3 rounded-xl border border-rose-200">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>Hatalı şifre! Lütfen tekrar deneyin.</span>
+            <div style={{
+              background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '12px',
+              padding: '8px 12px', marginBottom: '12px', fontSize: '12px',
+              color: '#dc2626', fontWeight: 700
+            }}>
+              ❌ Hatalı şifre! Lütfen tekrar deneyin.
             </div>
           )}
 
-          <div className="text-[11px] text-stone-500 bg-stone-50 p-2.5 rounded-xl border border-stone-100 flex items-center justify-between">
+          <div style={{
+            background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '12px',
+            padding: '8px 12px', marginBottom: '16px', fontSize: '11px', color: '#666',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+          }}>
             <span>Varsayılan Şifre:</span>
-            <span className="font-mono font-bold text-waffloq-800 text-xs">1453</span>
+            <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#0f3c3a', fontSize: '13px' }}>1453</span>
           </div>
 
           <button
             type="submit"
-            className="w-full py-3 bg-waffloq-600 hover:bg-waffloq-700 text-white font-extrabold rounded-xl text-sm transition-colors shadow-md shadow-waffloq-600/20 flex items-center justify-center gap-2"
+            style={{
+              width: '100%', padding: '14px', background: '#23958e', color: '#fff',
+              border: 'none', borderRadius: '14px', fontSize: '14px', fontWeight: 800,
+              cursor: 'pointer', boxShadow: '0 4px 12px rgba(35,149,142,0.3)'
+            }}
           >
-            <span>Panele Giriş Yap</span>
-            <ArrowRight className="w-4 h-4" />
+            Panele Giriş Yap →
           </button>
         </form>
       </div>
