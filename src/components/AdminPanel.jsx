@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
+import { SHOP_INFO } from '../data/defaultMenu';
 
-// Sipariş servisi — bağımsız, hata güvenli
+const PRODUCTION_URL = 'https://waffloq-menu--waffloqmenu.europe-west4.hosted.app';
 const STORAGE_KEY_ORDERS = 'waffloq_active_orders';
 
 function getOrders() {
@@ -16,8 +18,8 @@ function saveOrders(orders) {
 }
 
 export default function AdminPanel({
-  menuItems,
-  categories,
+  menuItems = [],
+  categories = [],
   onUpdateItem,
   onAddItem,
   onDeleteItem,
@@ -25,26 +27,34 @@ export default function AdminPanel({
   onClose,
   onLogout
 }) {
-  const [tab, setTab] = useState('orders');
+  const [activeTab, setActiveTab] = useState('orders'); // 'orders' | 'items' | 'add' | 'qr' | 'security'
   const [orders, setOrders] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
+  
+  // Şifre değiştirme state
   const [newPin, setNewPin] = useState('');
-  const [pinMsg, setPinMsg] = useState('');
+  const [pinMessage, setPinMessage] = useState('');
 
-  // Yeni Ürün
+  // Yeni ürün ekleme state
   const [newName, setNewName] = useState('');
   const [newCat, setNewCat] = useState('waffles');
   const [newPrice, setNewPrice] = useState('');
   const [newDesc, setNewDesc] = useState('');
+  const [newImage, setNewImage] = useState('https://images.unsplash.com/photo-1562376552-0d160a2f238d?w=600&q=80');
+
+  // QR Kod state
+  const [qrTableCount, setQrTableCount] = useState(10);
+  const [qrSelectedTable, setQrSelectedTable] = useState(1);
 
   const items = Array.isArray(menuItems) ? menuItems : [];
 
+  // Siparişleri dinle
   useEffect(() => {
     setOrders(getOrders());
     const handler = () => setOrders(getOrders());
     window.addEventListener('waffloq_new_order', handler);
     window.addEventListener('storage', handler);
-    // Periyodik olarak da kontrol et
     const interval = setInterval(handler, 3000);
     return () => {
       window.removeEventListener('waffloq_new_order', handler);
@@ -53,7 +63,7 @@ export default function AdminPanel({
     };
   }, []);
 
-  const updateStatus = (id, current) => {
+  const updateOrderStatus = (id, current) => {
     const next = current === 'pending' ? 'preparing' : current === 'preparing' ? 'completed' : 'pending';
     const updated = orders.map(o => o.id === id ? { ...o, status: next } : o);
     saveOrders(updated);
@@ -61,405 +71,1122 @@ export default function AdminPanel({
   };
 
   const deleteOrder = (id) => {
-    const updated = orders.filter(o => o.id !== id);
-    saveOrders(updated);
-    setOrders(updated);
+    if (confirm('Bu siparişi silmek istediğinize emin misiniz?')) {
+      const updated = orders.filter(o => o.id !== id);
+      saveOrders(updated);
+      setOrders(updated);
+    }
   };
 
-  const clearOrders = () => {
-    localStorage.removeItem(STORAGE_KEY_ORDERS);
-    setOrders([]);
+  const clearAllOrders = () => {
+    if (confirm('Tüm sipariş geçmişini silmek istiyor musunuz?')) {
+      localStorage.removeItem(STORAGE_KEY_ORDERS);
+      setOrders([]);
+    }
   };
-
-  const filteredItems = items.filter(item => {
-    if (!item || !item.name) return false;
-    if (!searchTerm) return true;
-    return item.name.toLowerCase().includes(searchTerm.toLowerCase());
-  });
 
   const handleAddItem = (e) => {
     e.preventDefault();
-    if (!newName || !newPrice) { alert('Ürün adı ve fiyatı gereklidir.'); return; }
+    if (!newName.trim() || !newPrice) {
+      alert('Lütfen ürün adını ve fiyatını eksiksiz girin.');
+      return;
+    }
     if (onAddItem) {
       onAddItem({
-        name: newName, categoryId: newCat, price: Number(newPrice),
-        description: newDesc, available: true,
-        image: 'https://images.unsplash.com/photo-1562376552-0d160a2f238d?w=600&q=80'
+        name: newName.trim(),
+        categoryId: newCat,
+        price: Number(newPrice),
+        description: newDesc.trim(),
+        image: newImage.trim() || 'https://images.unsplash.com/photo-1562376552-0d160a2f238d?w=600&q=80',
+        available: true
       });
     }
-    alert('Ürün eklendi!');
-    setNewName(''); setNewPrice(''); setNewDesc('');
-    setTab('items');
+    alert(`"${newName}" ürünü menüye başarıyla eklendi!`);
+    setNewName('');
+    setNewPrice('');
+    setNewDesc('');
+    setActiveTab('items');
   };
 
   const handleChangePin = (e) => {
     e.preventDefault();
-    if (newPin.trim().length < 4) { alert('En az 4 karakter olmalı.'); return; }
+    if (newPin.trim().length < 4) {
+      alert('Şifre en az 4 karakter veya rakam olmalıdır.');
+      return;
+    }
     localStorage.setItem('waffloq_admin_pin', newPin.trim());
-    setPinMsg('✅ Şifre güncellendi!');
+    setPinMessage('✅ Yönetici şifreniz başarıyla güncellendi!');
     setNewPin('');
-    setTimeout(() => setPinMsg(''), 3000);
+    setTimeout(() => setPinMessage(''), 3000);
   };
+
+  const filteredItems = items.filter(item => {
+    if (!item || !item.name) return false;
+    const matchSearch = searchTerm ? item.name.toLowerCase().includes(searchTerm.toLowerCase()) : true;
+    const matchCat = selectedCategoryFilter === 'all' ? true : item.categoryId === selectedCategoryFilter;
+    return matchSearch && matchCat;
+  });
 
   const pendingCount = orders.filter(o => o && o.status === 'pending').length;
+  const preparingCount = orders.filter(o => o && o.status === 'preparing').length;
 
-  // Inline style objeleri
-  const S = {
-    overlay: {
-      position: 'fixed', inset: 0, zIndex: 9998,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'rgba(8,37,36,0.88)', backdropFilter: 'blur(10px)',
-      padding: '8px', fontFamily: 'system-ui, sans-serif'
-    },
-    panel: {
-      background: '#fff', borderRadius: '24px', maxWidth: '860px', width: '100%',
-      maxHeight: '94vh', display: 'flex', flexDirection: 'column',
-      boxShadow: '0 25px 60px rgba(0,0,0,0.3)', border: '2px solid #b0e5e0',
-      overflow: 'hidden'
-    },
-    header: {
-      padding: '16px 20px', background: 'linear-gradient(135deg, #082524, #0f3c3a)',
-      color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between'
-    },
-    headerTitle: { fontSize: '18px', fontWeight: 900, margin: 0, letterSpacing: '0.05em' },
-    headerSub: { fontSize: '11px', color: '#7ed1cb', marginTop: '2px' },
-    btnClose: {
-      background: 'rgba(255,255,255,0.1)', border: 'none', borderRadius: '50%',
-      width: '36px', height: '36px', cursor: 'pointer', color: '#fff', fontSize: '18px',
-      display: 'flex', alignItems: 'center', justifyContent: 'center'
-    },
-    btnLogout: {
-      background: 'rgba(220,38,38,0.15)', border: '1px solid rgba(220,38,38,0.3)',
-      borderRadius: '10px', padding: '6px 14px', color: '#fca5a5', fontSize: '12px',
-      fontWeight: 700, cursor: 'pointer', marginRight: '8px'
-    },
-    tabs: {
-      display: 'flex', gap: '0', borderBottom: '2px solid #f0f0f0',
-      background: '#f9fafb', overflowX: 'auto', padding: '0 12px'
-    },
-    tab: (active) => ({
-      padding: '12px 16px', fontSize: '12px', fontWeight: active ? 800 : 600,
-      color: active ? '#0f3c3a' : '#888', cursor: 'pointer', border: 'none',
-      background: 'none', borderBottom: active ? '3px solid #23958e' : '3px solid transparent',
-      whiteSpace: 'nowrap', transition: 'all 0.2s'
-    }),
-    badge: {
-      background: '#ef4444', color: '#fff', fontSize: '10px', fontWeight: 800,
-      padding: '2px 7px', borderRadius: '20px', marginLeft: '6px'
-    },
-    content: { flex: 1, overflow: 'auto', padding: '20px' },
-    input: {
-      width: '100%', padding: '10px 14px', borderRadius: '12px',
-      border: '1px solid #e0e0e0', fontSize: '13px', outline: 'none',
-      boxSizing: 'border-box'
-    },
-    orderCard: (status) => ({
-      background: '#fff', borderRadius: '16px', padding: '16px',
-      border: `2px solid ${status === 'pending' ? '#f59e0b' : status === 'preparing' ? '#3b82f6' : '#d1d5db'}`,
-      marginBottom: '12px',
-      boxShadow: status === 'pending' ? '0 0 20px rgba(245,158,11,0.15)' : 'none'
-    }),
-    statusBtn: (status) => ({
-      background: status === 'pending' ? '#f59e0b' : status === 'preparing' ? '#3b82f6' : '#10b981',
-      color: '#fff', border: 'none', borderRadius: '10px', padding: '6px 14px',
-      fontSize: '12px', fontWeight: 700, cursor: 'pointer'
-    }),
-    itemRow: {
-      background: '#fff', borderRadius: '14px', padding: '12px',
-      border: '1px solid #e8e8e8', marginBottom: '8px',
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px'
-    },
-    priceInput: {
-      width: '80px', padding: '6px', textAlign: 'center', fontWeight: 700,
-      fontSize: '13px', borderRadius: '8px', border: '1px solid #d0d0d0',
-      background: '#f5f5f5', outline: 'none'
-    },
-    primaryBtn: {
-      width: '100%', padding: '14px', background: '#23958e', color: '#fff',
-      border: 'none', borderRadius: '14px', fontSize: '14px', fontWeight: 800,
-      cursor: 'pointer', boxShadow: '0 4px 12px rgba(35,149,142,0.25)'
-    },
-    deleteBtn: {
-      background: 'none', border: 'none', cursor: 'pointer', color: '#aaa',
-      fontSize: '16px', padding: '4px'
-    },
-    stockBtn: (available) => ({
-      padding: '5px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 700,
-      border: 'none', cursor: 'pointer',
-      background: available ? '#d1fae5' : '#fee2e2',
-      color: available ? '#065f46' : '#991b1b'
-    })
-  };
+  const currentQrUrl = `${PRODUCTION_URL}/?masa=${qrSelectedTable}`;
 
   return (
-    <div style={S.overlay}>
-      <div style={S.panel}>
-        {/* HEADER */}
-        <div style={S.header}>
+    <div style={{
+      minHeight: '100vh',
+      backgroundColor: '#f1f5f9',
+      color: '#0f172a',
+      fontFamily: "'Plus Jakarta Sans', system-ui, -apple-system, sans-serif",
+      display: 'flex',
+      flexDirection: 'column'
+    }}>
+      {/* ÜST YÖNETİCİ ÇUBUĞU (NAVBAR) */}
+      <header style={{
+        backgroundColor: '#082524',
+        borderBottom: '2px solid #144e4b',
+        color: '#ffffff',
+        padding: '14px 24px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '16px',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.15)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <img
+            src={SHOP_INFO.logo}
+            alt="Logo"
+            style={{
+              width: '44px',
+              height: '44px',
+              borderRadius: '50%',
+              backgroundColor: '#0f3c3a',
+              border: '2px solid #7ed1cb',
+              objectFit: 'cover'
+            }}
+          />
           <div>
-            <h2 style={S.headerTitle}>🏪 WAFFLOQ Yönetim Paneli</h2>
-            <div style={S.headerSub}>Yerel Depo Modu • Sipariş & Menü Yönetimi</div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center' }}>
-            <button style={S.btnLogout} onClick={onLogout || onClose}>🚪 Çıkış</button>
-            <button style={S.btnClose} onClick={onClose}>✕</button>
-          </div>
-        </div>
-
-        {/* TABS */}
-        <div style={S.tabs}>
-          <button style={S.tab(tab === 'orders')} onClick={() => setTab('orders')}>
-            🔔 Masa Siparişleri ({orders.length})
-            {pendingCount > 0 && <span style={S.badge}>{pendingCount} Yeni</span>}
-          </button>
-          <button style={S.tab(tab === 'items')} onClick={() => setTab('items')}>
-            📋 Ürün & Fiyat ({items.length})
-          </button>
-          <button style={S.tab(tab === 'add')} onClick={() => setTab('add')}>
-            ➕ Yeni Ürün Ekle
-          </button>
-          <button style={S.tab(tab === 'security')} onClick={() => setTab('security')}>
-            🔑 Şifre Ayarları
-          </button>
-        </div>
-
-        {/* CONTENT */}
-        <div style={S.content}>
-
-          {/* SİPARİŞLER SEKMESİ */}
-          {tab === 'orders' && (
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 800, color: '#0f3c3a' }}>
-                    Masalardan Gelen Siparişler
-                  </h3>
-                  <p style={{ margin: '4px 0 0', fontSize: '12px', color: '#888' }}>
-                    Müşteriler "Garsona İlet" dediğinde siparişler anlık buraya düşer.
-                  </p>
-                </div>
-                {orders.length > 0 && (
-                  <button
-                    onClick={() => { if (confirm('Tüm siparişleri temizle?')) clearOrders(); }}
-                    style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
-                  >🗑 Temizle</button>
-                )}
-              </div>
-
-              {orders.length === 0 ? (
-                <div style={{
-                  textAlign: 'center', padding: '60px 20px', background: '#f9fafb',
-                  borderRadius: '20px', border: '1px solid #e8e8e8'
-                }}>
-                  <div style={{ fontSize: '48px', marginBottom: '8px' }}>🔔</div>
-                  <p style={{ fontWeight: 700, color: '#555', fontSize: '14px' }}>Henüz bekleyen sipariş yok</p>
-                  <p style={{ fontSize: '12px', color: '#999', marginTop: '4px' }}>
-                    Müşteriler QR kodu okutup sipariş verdiğinde burada görünecek.
-                  </p>
-                </div>
-              ) : (
-                orders.map(order => {
-                  if (!order) return null;
-                  const orderItems = Array.isArray(order.items) ? order.items : [];
-                  return (
-                    <div key={order.id} style={S.orderCard(order.status)}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', paddingBottom: '10px', borderBottom: '1px solid #f0f0f0' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <span style={{
-                            background: '#0f3c3a', color: '#fff', fontWeight: 900,
-                            padding: '4px 14px', borderRadius: '10px', fontSize: '14px'
-                          }}>
-                            Masa #{order.tableNumber || '?'}
-                          </span>
-                          <span style={{ fontSize: '12px', color: '#888' }}>
-                            🕐 {order.timeFormatted || 'Yeni'}
-                          </span>
-                        </div>
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          <button
-                            style={S.statusBtn(order.status)}
-                            onClick={() => updateStatus(order.id, order.status)}
-                          >
-                            {order.status === 'pending' ? '⏳ Hazırla' : order.status === 'preparing' ? '🍳 Teslim Et' : '✅ Tamamlandı'}
-                          </button>
-                          <button style={S.deleteBtn} onClick={() => deleteOrder(order.id)}>🗑</button>
-                        </div>
-                      </div>
-
-                      {orderItems.map((item, i) => (
-                        <div key={i} style={{
-                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                          background: '#f9fafb', padding: '8px 12px', borderRadius: '10px',
-                          marginBottom: '4px', fontSize: '12px'
-                        }}>
-                          <div>
-                            <strong style={{ color: '#0f3c3a' }}>{item.quantity || 1}x</strong>{' '}
-                            <span style={{ fontWeight: 600 }}>{item.name}</span>
-                            {item.specialNote && (
-                              <span style={{ fontSize: '10px', color: '#b45309', background: '#fef3c7', padding: '2px 6px', borderRadius: '4px', marginLeft: '6px' }}>
-                                Not: {item.specialNote}
-                              </span>
-                            )}
-                          </div>
-                          <span style={{ fontWeight: 700, color: '#17625e' }}>
-                            {(item.price || 0) * (item.quantity || 1)} TL
-                          </span>
-                        </div>
-                      ))}
-
-                      <div style={{
-                        display: 'flex', justifyContent: 'space-between', marginTop: '12px',
-                        paddingTop: '8px', borderTop: '1px solid #f0f0f0',
-                        fontSize: '13px', fontWeight: 900
-                      }}>
-                        <span style={{ color: '#888' }}>Toplam:</span>
-                        <span style={{ color: '#0f3c3a', fontSize: '16px' }}>{order.totalAmount || 0} TL</span>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          )}
-
-          {/* ÜRÜN LİSTESİ SEKMESİ */}
-          {tab === 'items' && (
-            <div>
-              <input
-                type="text"
-                placeholder="🔍 Ürün adı ara..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                style={{ ...S.input, marginBottom: '16px' }}
-              />
-
-              <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                {filteredItems.map(item => (
-                  <div key={item.id} style={S.itemRow}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
-                      <img
-                        src={item.image}
-                        alt={item.name || ''}
-                        style={{
-                          width: '44px', height: '44px', borderRadius: '12px',
-                          objectFit: 'cover', background: '#f0f0f0', border: '1px solid #e0e0e0',
-                          flexShrink: 0
-                        }}
-                        onError={(e) => { e.target.style.display = 'none'; }}
-                      />
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: '13px', color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {item.name}
-                        </div>
-                        <div style={{ fontSize: '11px', color: '#888' }}>
-                          <strong style={{ color: '#17625e' }}>{item.price} TL</strong> • {item.categoryId === 'drinks' ? 'İçecek' : 'Waffle'}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                      <input
-                        type="number"
-                        defaultValue={item.price}
-                        style={S.priceInput}
-                        onBlur={(e) => {
-                          const v = Number(e.target.value);
-                          if (v > 0 && v !== item.price && onUpdateItem) {
-                            onUpdateItem({ ...item, price: v });
-                          }
-                        }}
-                      />
-                      <button
-                        style={S.stockBtn(item.available !== false)}
-                        onClick={() => onUpdateItem && onUpdateItem({ ...item, available: !(item.available !== false) })}
-                      >
-                        {item.available !== false ? 'Stokta' : 'Tükendi'}
-                      </button>
-                      <button
-                        style={S.deleteBtn}
-                        onClick={() => {
-                          if (confirm(`"${item.name}" silinsin mi?`)) {
-                            onDeleteItem && onDeleteItem(item.id);
-                          }
-                        }}
-                      >🗑</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid #e8e8e8', display: 'flex', justifyContent: 'flex-end' }}>
-                <button
-                  onClick={() => { if (confirm('Menüyü varsayılana sıfırla?')) onResetDefaults && onResetDefaults(); }}
-                  style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
-                >🔄 Menüyü Sıfırla</button>
-              </div>
-            </div>
-          )}
-
-          {/* YENİ ÜRÜN SEKMESİ */}
-          {tab === 'add' && (
-            <form onSubmit={handleAddItem}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-                <div>
-                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#555' }}>Ürün Adı *</label>
-                  <input style={S.input} value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nutella Pankek" required />
-                </div>
-                <div>
-                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#555' }}>Kategori *</label>
-                  <select style={S.input} value={newCat} onChange={(e) => setNewCat(e.target.value)}>
-                    <option value="waffles">🧇 Waffle</option>
-                    <option value="drinks">🥤 İçecek</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#555' }}>Fiyat (TL) *</label>
-                  <input style={S.input} type="number" value={newPrice} onChange={(e) => setNewPrice(e.target.value)} placeholder="350" required />
-                </div>
-                <div>
-                  <label style={{ fontSize: '12px', fontWeight: 700, color: '#555' }}>Açıklama</label>
-                  <input style={S.input} value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="İçerik bilgisi..." />
-                </div>
-              </div>
-              <button type="submit" style={S.primaryBtn}>Ürünü Menüye Ekle</button>
-            </form>
-          )}
-
-          {/* ŞİFRE SEKMESİ */}
-          {tab === 'security' && (
-            <div style={{ maxWidth: '400px', margin: '0 auto' }}>
-              <div style={{
-                background: '#edf9f8', border: '1px solid #b0e5e0', borderRadius: '16px',
-                padding: '16px', marginBottom: '16px', fontSize: '12px', color: '#0f3c3a'
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h1 style={{
+                fontSize: '18px',
+                fontWeight: 900,
+                letterSpacing: '0.08em',
+                margin: 0,
+                color: '#ffffff',
+                fontFamily: "'Cinzel', serif"
               }}>
-                <strong style={{ fontSize: '14px' }}>🔐 Yönetici Şifrenizi Değiştirin</strong>
-                <p style={{ margin: '4px 0 0', color: '#555' }}>
-                  Müşterilerinizin panele erişememesi için şifrenizi güncelleyebilirsiniz.
+                WAFFLOQ
+              </h1>
+              <span style={{
+                backgroundColor: '#23958e',
+                color: '#ffffff',
+                fontSize: '11px',
+                fontWeight: 800,
+                padding: '2px 8px',
+                borderRadius: '6px'
+              }}>
+                YÖNETİM & MUTFAK
+              </span>
+            </div>
+            <p style={{ margin: 0, fontSize: '11px', color: '#7ed1cb' }}>
+              Canlı Masa Siparişleri ve Menü Yönetim Ekranı
+            </p>
+          </div>
+        </div>
+
+        {/* Butonlar */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button
+            onClick={onClose}
+            style={{
+              backgroundColor: '#1b7a75',
+              color: '#ffffff',
+              border: 'none',
+              borderRadius: '12px',
+              padding: '10px 18px',
+              fontSize: '13px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              transition: 'background-color 0.2s'
+            }}
+          >
+            ← Müşteri Menüsüne Dön
+          </button>
+
+          <button
+            onClick={onLogout}
+            style={{
+              backgroundColor: '#450a0a',
+              color: '#fca5a5',
+              border: '1px solid #7f1d1d',
+              borderRadius: '12px',
+              padding: '10px 16px',
+              fontSize: '13px',
+              fontWeight: 700,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            🔒 Çıkış Yap
+          </button>
+        </div>
+      </header>
+
+      {/* SEKMELER */}
+      <div style={{
+        backgroundColor: '#ffffff',
+        borderBottom: '1px solid #e2e8f0',
+        padding: '0 24px',
+        display: 'flex',
+        gap: '8px',
+        overflowX: 'auto',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+      }}>
+        <button
+          onClick={() => setActiveTab('orders')}
+          style={{
+            padding: '16px 20px',
+            fontSize: '14px',
+            fontWeight: 800,
+            border: 'none',
+            background: 'none',
+            cursor: 'pointer',
+            borderBottom: activeTab === 'orders' ? '3px solid #23958e' : '3px solid transparent',
+            color: activeTab === 'orders' ? '#0f3c3a' : '#64748b',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          <span>🔔 Masa Siparişleri ({orders.length})</span>
+          {pendingCount > 0 && (
+            <span style={{
+              backgroundColor: '#ef4444',
+              color: '#ffffff',
+              fontSize: '11px',
+              fontWeight: 900,
+              padding: '2px 8px',
+              borderRadius: '12px'
+            }}>
+              {pendingCount} Yeni
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('items')}
+          style={{
+            padding: '16px 20px',
+            fontSize: '14px',
+            fontWeight: 800,
+            border: 'none',
+            background: 'none',
+            cursor: 'pointer',
+            borderBottom: activeTab === 'items' ? '3px solid #23958e' : '3px solid transparent',
+            color: activeTab === 'items' ? '#0f3c3a' : '#64748b',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          📋 Menü & Fiyat Listesi ({items.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('add')}
+          style={{
+            padding: '16px 20px',
+            fontSize: '14px',
+            fontWeight: 800,
+            border: 'none',
+            background: 'none',
+            cursor: 'pointer',
+            borderBottom: activeTab === 'add' ? '3px solid #23958e' : '3px solid transparent',
+            color: activeTab === 'add' ? '#0f3c3a' : '#64748b',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          ➕ Yeni Ürün Ekle
+        </button>
+
+        <button
+          onClick={() => setActiveTab('qr')}
+          style={{
+            padding: '16px 20px',
+            fontSize: '14px',
+            fontWeight: 800,
+            border: 'none',
+            background: 'none',
+            cursor: 'pointer',
+            borderBottom: activeTab === 'qr' ? '3px solid #23958e' : '3px solid transparent',
+            color: activeTab === 'qr' ? '#0f3c3a' : '#64748b',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          📱 Masa QR Kod & Stand Üretici
+        </button>
+
+        <button
+          onClick={() => setActiveTab('security')}
+          style={{
+            padding: '16px 20px',
+            fontSize: '14px',
+            fontWeight: 800,
+            border: 'none',
+            background: 'none',
+            cursor: 'pointer',
+            borderBottom: activeTab === 'security' ? '3px solid #23958e' : '3px solid transparent',
+            color: activeTab === 'security' ? '#0f3c3a' : '#64748b',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          🔑 Şifre Ayarları
+        </button>
+      </div>
+
+      {/* İÇERİK ALANI */}
+      <main style={{ flex: 1, padding: '24px', maxWidth: '1400px', width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
+        
+        {/* 1. SEKME: CANLI SİPARİŞLER (MUTFAK EKRANI) */}
+        {activeTab === 'orders' && (
+          <div>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '20px',
+              flexWrap: 'wrap',
+              gap: '12px'
+            }}>
+              <div>
+                <h2 style={{ fontSize: '20px', fontWeight: 900, margin: 0, color: '#0f3c3a' }}>
+                  Masalardan Gelen Anlık Siparişler
+                </h2>
+                <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#64748b' }}>
+                  Müşteriler masadaki QR kodu okutup 'Garsona İlet / Sipariş Ver' dediğinde buraya canlı olarak düşer.
                 </p>
               </div>
 
-              <form onSubmit={handleChangePin} style={{ background: '#fff', padding: '16px', borderRadius: '16px', border: '1px solid #e8e8e8' }}>
-                <label style={{ fontSize: '12px', fontWeight: 700, color: '#555' }}>Yeni Şifre:</label>
-                <input
-                  style={{ ...S.input, marginTop: '6px', marginBottom: '12px', fontWeight: 700, fontSize: '16px' }}
-                  value={newPin}
-                  onChange={(e) => setNewPin(e.target.value)}
-                  placeholder="Yeni şifre (en az 4 karakter)"
-                  required
-                />
-                {pinMsg && (
-                  <div style={{
-                    background: '#d1fae5', border: '1px solid #a7f3d0', borderRadius: '10px',
-                    padding: '8px 12px', marginBottom: '12px', fontSize: '12px',
-                    color: '#065f46', fontWeight: 700
-                  }}>{pinMsg}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '12px', fontWeight: 700, color: '#64748b' }}>
+                  Bekleyen: <strong style={{ color: '#d97706' }}>{pendingCount}</strong> | Hazırlanan: <strong style={{ color: '#2563eb' }}>{preparingCount}</strong>
+                </span>
+                {orders.length > 0 && (
+                  <button
+                    onClick={clearAllOrders}
+                    style={{
+                      backgroundColor: '#fee2e2',
+                      color: '#dc2626',
+                      border: '1px solid #fca5a5',
+                      borderRadius: '10px',
+                      padding: '8px 14px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🗑 Tümünü Temizle
+                  </button>
                 )}
-                <button type="submit" style={S.primaryBtn}>Şifreyi Kaydet</button>
-              </form>
+              </div>
             </div>
-          )}
-        </div>
-      </div>
+
+            {orders.length === 0 ? (
+              <div style={{
+                backgroundColor: '#ffffff',
+                borderRadius: '24px',
+                padding: '60px 20px',
+                textAlign: 'center',
+                border: '2px dashed #cbd5e1'
+              }}>
+                <div style={{ fontSize: '56px', marginBottom: '14px' }}>🔔</div>
+                <h3 style={{ fontSize: '18px', fontWeight: 800, color: '#0f3c3a', margin: '0 0 6px 0' }}>
+                  Şu Anda Bekleyen Sipariş Yok
+                </h3>
+                <p style={{ fontSize: '13px', color: '#64748b', maxWidth: '460px', margin: '0 auto' }}>
+                  Müşteriler masalarından QR kodla sipariş verdikçe sesli ve görsel bildirimle anında burada listelenecektir.
+                </p>
+              </div>
+            ) : (
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))',
+                gap: '18px'
+              }}>
+                {orders.map(order => {
+                  if (!order) return null;
+                  const isPending = order.status === 'pending';
+                  const isPreparing = order.status === 'preparing';
+                  const isCompleted = order.status === 'completed';
+
+                  return (
+                    <div
+                      key={order.id}
+                      style={{
+                        backgroundColor: '#ffffff',
+                        borderRadius: '20px',
+                        padding: '20px',
+                        boxShadow: isPending
+                          ? '0 10px 25px -5px rgba(245, 158, 11, 0.25)'
+                          : '0 4px 12px rgba(0,0,0,0.05)',
+                        border: isPending
+                          ? '2px solid #f59e0b'
+                          : isPreparing
+                          ? '2px solid #3b82f6'
+                          : '2px solid #e2e8f0',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between'
+                      }}
+                    >
+                      <div>
+                        {/* Sipariş Üst Bilgisi */}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          borderBottom: '1px solid #f1f5f9',
+                          paddingBottom: '12px',
+                          marginBottom: '12px'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{
+                              backgroundColor: '#0f3c3a',
+                              color: '#ffffff',
+                              fontWeight: 900,
+                              fontSize: '15px',
+                              padding: '6px 14px',
+                              borderRadius: '12px'
+                            }}>
+                              MASA #{order.tableNumber}
+                            </span>
+                            <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
+                              🕒 {order.timeFormatted || 'Yeni'}
+                            </span>
+                          </div>
+
+                          <button
+                            onClick={() => deleteOrder(order.id)}
+                            style={{
+                              backgroundColor: '#fef2f2',
+                              color: '#ef4444',
+                              border: 'none',
+                              borderRadius: '8px',
+                              padding: '6px 10px',
+                              cursor: 'pointer',
+                              fontSize: '13px'
+                            }}
+                            title="Siparişi Sil"
+                          >
+                            🗑
+                          </button>
+                        </div>
+
+                        {/* Sipariş Kalemleri */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+                          {(Array.isArray(order.items) ? order.items : []).map((item, idx) => (
+                            <div
+                              key={idx}
+                              style={{
+                                backgroundColor: '#f8fafc',
+                                borderRadius: '12px',
+                                padding: '10px 12px',
+                                border: '1px solid #e2e8f0',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center'
+                              }}
+                            >
+                              <div>
+                                <strong style={{ color: '#0f3c3a', fontSize: '14px' }}>
+                                  {item.quantity || 1}x
+                                </strong>{' '}
+                                <span style={{ fontWeight: 700, fontSize: '13px' }}>{item.name}</span>
+                                {item.specialNote && (
+                                  <div style={{
+                                    fontSize: '11px',
+                                    color: '#b45309',
+                                    backgroundColor: '#fef3c7',
+                                    padding: '2px 6px',
+                                    borderRadius: '6px',
+                                    marginTop: '4px',
+                                    display: 'inline-block'
+                                  }}>
+                                    Not: {item.specialNote}
+                                  </div>
+                                )}
+                              </div>
+                              <span style={{ fontWeight: 800, fontSize: '13px', color: '#17625e' }}>
+                                {(item.price || 0) * (item.quantity || 1)} TL
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Alt Tutar & Durum Değiştirme Butonu */}
+                      <div>
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          marginBottom: '12px',
+                          borderTop: '1px solid #f1f5f9',
+                          paddingTop: '10px'
+                        }}>
+                          <span style={{ fontSize: '13px', color: '#64748b', fontWeight: 600 }}>Toplam Tutar:</span>
+                          <span style={{ fontSize: '18px', fontWeight: 900, color: '#0f3c3a' }}>
+                            {order.totalAmount || 0} TL
+                          </span>
+                        </div>
+
+                        <button
+                          onClick={() => updateOrderStatus(order.id, order.status)}
+                          style={{
+                            width: '100%',
+                            padding: '12px',
+                            borderRadius: '12px',
+                            border: 'none',
+                            fontSize: '13px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            backgroundColor: isPending ? '#f59e0b' : isPreparing ? '#3b82f6' : '#10b981',
+                            color: '#ffffff',
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                          }}
+                        >
+                          {isPending ? '⏳ Siparişi Onayla & Hazırla' : isPreparing ? '🍳 Hazırlandı • Masaya Teslim Et' : '✅ Tamamlandı (Arşivle)'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 2. SEKME: ÜRÜN & FİYAT LİSTESİ */}
+        {activeTab === 'items' && (
+          <div>
+            {/* Filtre ve Arama */}
+            <div style={{
+              backgroundColor: '#ffffff',
+              padding: '16px 20px',
+              borderRadius: '20px',
+              border: '1px solid #e2e8f0',
+              marginBottom: '16px',
+              display: 'flex',
+              gap: '12px',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <input
+                type="text"
+                placeholder="🔍 Ürün adı ile ara..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{
+                  padding: '10px 16px',
+                  borderRadius: '12px',
+                  border: '1px solid #cbd5e1',
+                  fontSize: '13px',
+                  outline: 'none',
+                  minWidth: '240px',
+                  flex: 1
+                }}
+              />
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => setSelectedCategoryFilter('all')}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '10px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    border: 'none',
+                    backgroundColor: selectedCategoryFilter === 'all' ? '#0f3c3a' : '#f1f5f9',
+                    color: selectedCategoryFilter === 'all' ? '#ffffff' : '#475569'
+                  }}
+                >
+                  Tümü ({items.length})
+                </button>
+                <button
+                  onClick={() => setSelectedCategoryFilter('waffles')}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '10px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    border: 'none',
+                    backgroundColor: selectedCategoryFilter === 'waffles' ? '#0f3c3a' : '#f1f5f9',
+                    color: selectedCategoryFilter === 'waffles' ? '#ffffff' : '#475569'
+                  }}
+                >
+                  🧇 Waffle'lar
+                </button>
+                <button
+                  onClick={() => setSelectedCategoryFilter('drinks')}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '10px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    border: 'none',
+                    backgroundColor: selectedCategoryFilter === 'drinks' ? '#0f3c3a' : '#f1f5f9',
+                    color: selectedCategoryFilter === 'drinks' ? '#ffffff' : '#475569'
+                  }}
+                >
+                  🥤 İçecekler
+                </button>
+              </div>
+            </div>
+
+            {/* Tablo / Kart Listesi */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+              gap: '14px'
+            }}>
+              {filteredItems.map(item => (
+                <div
+                  key={item.id}
+                  style={{
+                    backgroundColor: '#ffffff',
+                    borderRadius: '16px',
+                    padding: '14px',
+                    border: '1px solid #e2e8f0',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flex: 1 }}>
+                    <img
+                      src={item.image}
+                      alt={item.name || ''}
+                      style={{
+                        width: '54px',
+                        height: '54px',
+                        borderRadius: '12px',
+                        objectFit: 'cover',
+                        backgroundColor: '#f1f5f9',
+                        flexShrink: 0
+                      }}
+                      onError={(e) => {
+                        e.target.src = 'https://images.unsplash.com/photo-1562376552-0d160a2f238d?w=200&q=80';
+                      }}
+                    />
+                    <div style={{ minWidth: 0 }}>
+                      <h4 style={{
+                        fontSize: '14px',
+                        fontWeight: 800,
+                        margin: '0 0 4px 0',
+                        color: '#0f3c3a',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {item.name}
+                      </h4>
+                      <div style={{ fontSize: '11px', color: '#64748b' }}>
+                        {item.categoryId === 'drinks' ? '🥤 İçecek' : '🧇 Waffle'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Fiyat & Stok */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <input
+                        type="number"
+                        defaultValue={item.price}
+                        onBlur={(e) => {
+                          const val = Number(e.target.value);
+                          if (val > 0 && val !== item.price && onUpdateItem) {
+                            onUpdateItem({ ...item, price: val });
+                          }
+                        }}
+                        style={{
+                          width: '70px',
+                          padding: '8px 4px',
+                          textAlign: 'center',
+                          fontWeight: 800,
+                          fontSize: '13px',
+                          borderRadius: '8px',
+                          border: '1px solid #cbd5e1',
+                          backgroundColor: '#f8fafc',
+                          outline: 'none'
+                        }}
+                        title="Fiyatı değiştirmek için yazıp dışına tıklayın"
+                      />
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b' }}>TL</span>
+                    </div>
+
+                    <button
+                      onClick={() => onUpdateItem && onUpdateItem({ ...item, available: !(item.available !== false) })}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '8px',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        border: 'none',
+                        cursor: 'pointer',
+                        backgroundColor: item.available !== false ? '#dcfce7' : '#fee2e2',
+                        color: item.available !== false ? '#166534' : '#991b1b'
+                      }}
+                    >
+                      {item.available !== false ? 'Stokta' : 'Tükendi'}
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        if (confirm(`"${item.name}" ürününü menüden kaldırmak istediğinize emin misiniz?`)) {
+                          onDeleteItem && onDeleteItem(item.id);
+                        }
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: '#94a3b8',
+                        padding: '6px',
+                        fontSize: '15px'
+                      }}
+                      title="Sil"
+                    >
+                      🗑
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => {
+                  if (confirm('Tüm menüyü orijinal varsayılan haline sıfırlamak istiyor musunuz?')) {
+                    onResetDefaults && onResetDefaults();
+                  }
+                }}
+                style={{
+                  backgroundColor: 'transparent',
+                  color: '#dc2626',
+                  border: '1px solid #fca5a5',
+                  borderRadius: '10px',
+                  padding: '8px 16px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  cursor: 'pointer'
+                }}
+              >
+                🔄 Menüyü Varsayılana Sıfırla
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 3. SEKME: YENİ ÜRÜN EKLE */}
+        {activeTab === 'add' && (
+          <div style={{
+            maxWidth: '680px',
+            margin: '0 auto',
+            backgroundColor: '#ffffff',
+            borderRadius: '24px',
+            padding: '32px',
+            border: '1px solid #e2e8f0',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.04)'
+          }}>
+            <h3 style={{ fontSize: '18px', fontWeight: 900, color: '#0f3c3a', margin: '0 0 8px 0' }}>
+              Menüye Yeni Lezzet Ekle
+            </h3>
+            <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 24px 0' }}>
+              Eklediğiniz ürün anında müşterilerin canlı menüsüne yansıyacaktır.
+            </p>
+
+            <form onSubmit={handleAddItem}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                    Ürün Adı *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Örn: Nutella Çilekli Bowl"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '12px 14px',
+                      borderRadius: '12px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '13px',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                    Kategori *
+                  </label>
+                  <select
+                    value={newCat}
+                    onChange={(e) => setNewCat(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '12px 14px',
+                      borderRadius: '12px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '13px',
+                      outline: 'none',
+                      backgroundColor: '#ffffff',
+                      boxSizing: 'border-box'
+                    }}
+                  >
+                    <option value="waffles">🧇 Waffle Çeşitleri</option>
+                    <option value="drinks">🥤 İçecekler</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                    Fiyat (TL) *
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="380"
+                    value={newPrice}
+                    onChange={(e) => setNewPrice(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '12px 14px',
+                      borderRadius: '12px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '13px',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                    Görsel URL (Opsiyonel)
+                  </label>
+                  <input
+                    type="url"
+                    value={newImage}
+                    onChange={(e) => setNewImage(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '12px 14px',
+                      borderRadius: '12px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '13px',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                  Açıklama & İçindekiler
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="İçerik bilgisi: Belçika waffle hamuru, çikolata, fındık parçaları..."
+                  value={newDesc}
+                  onChange={(e) => setNewDesc(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '12px 14px',
+                    borderRadius: '12px',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '13px',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              <button
+                type="submit"
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  backgroundColor: '#23958e',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '14px',
+                  fontSize: '14px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 14px rgba(35, 149, 142, 0.3)'
+                }}
+              >
+                Ürünü Menüye Ekle
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* 4. SEKME: MASA QR KODLARI & STAND ÜRETİCİ */}
+        {activeTab === 'qr' && (
+          <div style={{
+            maxWidth: '640px',
+            margin: '0 auto',
+            backgroundColor: '#ffffff',
+            borderRadius: '24px',
+            padding: '32px',
+            border: '1px solid #e2e8f0',
+            textAlign: 'center'
+          }}>
+            <h3 style={{ fontSize: '20px', fontWeight: 900, color: '#0f3c3a', margin: '0 0 6px 0' }}>
+              Masa QR Kod & Stand Şablonu
+            </h3>
+            <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 20px 0' }}>
+              Masalarınız için yazdırılabilir canlı QR kodları buradan oluşturabilirsiniz.
+            </p>
+
+            {/* Masa Seçici */}
+            <div style={{
+              backgroundColor: '#f8fafc',
+              padding: '16px',
+              borderRadius: '16px',
+              border: '1px solid #e2e8f0',
+              marginBottom: '24px'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 800, color: '#0f3c3a' }}>Masa Numarası Seçin:</span>
+                <select
+                  value={qrTableCount}
+                  onChange={(e) => setQrTableCount(Number(e.target.value))}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '12px',
+                    fontWeight: 700
+                  }}
+                >
+                  <option value={5}>5 Masa</option>
+                  <option value={10}>10 Masa</option>
+                  <option value={20}>20 Masa</option>
+                  <option value={30}>30 Masa</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center' }}>
+                {Array.from({ length: qrTableCount }, (_, i) => i + 1).map(num => (
+                  <button
+                    key={num}
+                    onClick={() => setQrSelectedTable(num)}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: '10px',
+                      border: 'none',
+                      fontSize: '12px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      backgroundColor: qrSelectedTable === num ? '#23958e' : '#ffffff',
+                      color: qrSelectedTable === num ? '#ffffff' : '#334155',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                    }}
+                  >
+                    Masa {num}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* QR Kart Önizleme */}
+            <div style={{
+              backgroundColor: '#082524',
+              color: '#ffffff',
+              padding: '32px 24px',
+              borderRadius: '24px',
+              border: '4px solid #144e4b',
+              display: 'inline-flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              boxShadow: '0 15px 35px rgba(0,0,0,0.2)'
+            }}>
+              <img
+                src={SHOP_INFO.logo}
+                alt="Logo"
+                style={{
+                  width: '60px',
+                  height: '60px',
+                  borderRadius: '50%',
+                  border: '2px solid #7ed1cb',
+                  marginBottom: '10px'
+                }}
+              />
+              <h4 style={{
+                fontSize: '22px',
+                fontWeight: 900,
+                letterSpacing: '0.1em',
+                margin: '0 0 2px 0',
+                fontFamily: "'Cinzel', serif"
+              }}>
+                {SHOP_INFO.name}
+              </h4>
+              <p style={{
+                fontSize: '10px',
+                fontWeight: 800,
+                color: '#7ed1cb',
+                letterSpacing: '0.2em',
+                margin: '0 0 20px 0'
+              }}>
+                {SHOP_INFO.tagline}
+              </p>
+
+              {/* QR Kod */}
+              <div style={{
+                backgroundColor: '#ffffff',
+                padding: '16px',
+                borderRadius: '18px',
+                display: 'inline-block',
+                border: '2px solid #7ed1cb'
+              }}>
+                <QRCodeSVG
+                  value={currentQrUrl}
+                  size={180}
+                  level="H"
+                  fgColor="#082524"
+                />
+              </div>
+
+              <div style={{
+                marginTop: '18px',
+                backgroundColor: '#23958e',
+                color: '#ffffff',
+                padding: '6px 20px',
+                borderRadius: '20px',
+                fontWeight: 900,
+                fontSize: '15px'
+              }}>
+                MASA #{qrSelectedTable}
+              </div>
+
+              <p style={{ fontSize: '11px', color: '#94a3b8', marginTop: '10px', marginBottom: 0 }}>
+                Kameranızı QR koda tutarak menüyü inceleyin
+              </p>
+            </div>
+
+            <div style={{ marginTop: '24px' }}>
+              <button
+                onClick={() => window.print()}
+                style={{
+                  padding: '14px 28px',
+                  backgroundColor: '#0f3c3a',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '14px',
+                  fontSize: '14px',
+                  fontWeight: 800,
+                  cursor: 'pointer'
+                }}
+              >
+                🖨️ Masa Standını Yazdır
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 5. SEKME: ŞİFRE AYARLARI */}
+        {activeTab === 'security' && (
+          <div style={{
+            maxWidth: '480px',
+            margin: '0 auto',
+            backgroundColor: '#ffffff',
+            borderRadius: '24px',
+            padding: '32px',
+            border: '1px solid #e2e8f0'
+          }}>
+            <h3 style={{ fontSize: '18px', fontWeight: 900, color: '#0f3c3a', margin: '0 0 8px 0' }}>
+              🔑 Yönetici Şifresini Değiştir
+            </h3>
+            <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 20px 0' }}>
+              Müşterilerin yönetim paneline ve fiyat düzenlemelerine erişememesi için şifrenizi güncelleyin.
+            </p>
+
+            <form onSubmit={handleChangePin}>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                Yeni Şifre:
+              </label>
+              <input
+                type="text"
+                required
+                placeholder="Örn: 1453 veya 4 haneli yeni şifre"
+                value={newPin}
+                onChange={(e) => setNewPin(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '12px 14px',
+                  borderRadius: '12px',
+                  border: '1px solid #cbd5e1',
+                  fontSize: '14px',
+                  fontWeight: 800,
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                  marginBottom: '16px'
+                }}
+              />
+
+              {pinMessage && (
+                <div style={{
+                  backgroundColor: '#dcfce7',
+                  color: '#166534',
+                  padding: '10px 14px',
+                  borderRadius: '10px',
+                  fontSize: '12px',
+                  fontWeight: 700,
+                  marginBottom: '16px'
+                }}>
+                  {pinMessage}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  backgroundColor: '#23958e',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '14px',
+                  fontSize: '14px',
+                  fontWeight: 800,
+                  cursor: 'pointer'
+                }}
+              >
+                Yeni Şifreyi Kaydet
+              </button>
+            </form>
+          </div>
+        )}
+
+      </main>
     </div>
   );
 }

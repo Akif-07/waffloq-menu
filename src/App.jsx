@@ -17,7 +17,7 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState('waffles');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Modals & Drawers
+  // Modals & Ekran Durumları
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [showQrModal, setShowQrModal] = useState(false);
   const [showAdminAuth, setShowAdminAuth] = useState(false);
@@ -29,12 +29,17 @@ export default function App() {
   // Masa Numarası
   const [tableNumber, setTableNumber] = useState(null);
 
-  // Data Load
+  // Veri Yükleme
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       const tNum = params.get('masa') || params.get('table') || params.get('m');
       if (tNum) setTableNumber(tNum);
+
+      // URL'de doğrudan ?admin=true veya ?yonetim=true varsa şifre sor
+      if (params.get('admin') === 'true' || params.get('yonetim') === 'true' || window.location.hash === '#admin') {
+        setShowAdminAuth(true);
+      }
     } catch (e) { console.error(e); }
     loadData();
   }, []);
@@ -58,7 +63,7 @@ export default function App() {
     }
   };
 
-  // Cart
+  // Sepet İşlemleri
   const handleAddToCart = (product) => {
     setCartItems(prev => {
       const idx = prev.findIndex(i => i.id === product.id && i.specialNote === product.specialNote);
@@ -83,7 +88,7 @@ export default function App() {
     setCartItems(prev => prev.filter((_, i) => i !== idx));
   };
 
-  // Admin
+  // Admin Giriş / Çıkış
   const handleOpenAdmin = () => {
     if (adminLoggedIn) {
       setShowAdminPanel(true);
@@ -103,7 +108,7 @@ export default function App() {
     setShowAdminPanel(false);
   };
 
-  // Menu CRUD
+  // Menü Güncelleme
   const handleUpdateItem = async (item) => {
     try {
       const list = await menuService.updateMenuItem(item);
@@ -132,7 +137,7 @@ export default function App() {
     } catch (e) { console.error(e); }
   };
 
-  // Filter
+  // Filtreleme
   const filteredProducts = useMemo(() => {
     const safe = Array.isArray(menuItems) ? menuItems : [];
     if (searchQuery.trim()) {
@@ -145,6 +150,23 @@ export default function App() {
   const totalCartCount = cartItems.reduce((a, i) => a + (i.quantity || 1), 0);
   const totalCartPrice = cartItems.reduce((a, i) => a + ((i.price || 0) * (i.quantity || 1)), 0);
 
+  // EĞER YÖNETİCİ PANELİ AÇIKSA: TAM EKRAN YÖNETİCİ PANELİNİ GÖSTER
+  if (showAdminPanel) {
+    return (
+      <AdminPanel
+        menuItems={menuItems}
+        categories={categories}
+        onUpdateItem={handleUpdateItem}
+        onAddItem={handleAddItem}
+        onDeleteItem={handleDeleteItem}
+        onResetDefaults={handleResetDefaults}
+        onClose={() => setShowAdminPanel(false)}
+        onLogout={handleAdminLogout}
+      />
+    );
+  }
+
+  // MÜŞTERİ MENÜSÜ EKRANI
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#edf9f8] via-[#e2f4f2] to-[#d3f0ec] text-waffloq-950 flex flex-col justify-between selection:bg-waffloq-600 selection:text-white">
       <div>
@@ -236,7 +258,7 @@ export default function App() {
         </div>
       </footer>
 
-      {/* Floating Cart Bar */}
+      {/* Sabit Yüzen Sepet */}
       {totalCartCount > 0 && (
         <div className="fixed bottom-4 left-4 right-4 z-40 max-w-md mx-auto">
           <button
@@ -260,7 +282,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Modals */}
+      {/* Modallar */}
       {selectedProduct && (
         <ProductDetailModal
           item={selectedProduct}
@@ -273,26 +295,12 @@ export default function App() {
         <QRCodeModal onClose={() => setShowQrModal(false)} />
       )}
 
-      {/* Admin Auth */}
+      {/* Şifre Doğrulama */}
       <AdminAuthModal
         isOpen={showAdminAuth}
         onClose={() => setShowAdminAuth(false)}
         onSuccess={handleAuthSuccess}
       />
-
-      {/* Admin Panel */}
-      {showAdminPanel && (
-        <AdminPanel
-          menuItems={menuItems}
-          categories={categories}
-          onUpdateItem={handleUpdateItem}
-          onAddItem={handleAddItem}
-          onDeleteItem={handleDeleteItem}
-          onResetDefaults={handleResetDefaults}
-          onClose={() => setShowAdminPanel(false)}
-          onLogout={handleAdminLogout}
-        />
-      )}
 
       <CartDrawer
         isOpen={showCartDrawer}
