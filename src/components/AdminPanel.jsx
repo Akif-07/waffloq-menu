@@ -1,21 +1,24 @@
 import React, { useState } from 'react';
-import { X, Plus, Edit2, Trash2, Check, RefreshCw, Database, KeyRound, Lock, LogOut } from 'lucide-react';
+import { X, Plus, Trash2, Check, RefreshCw, Database, KeyRound, Lock, LogOut } from 'lucide-react';
 import { isFirebaseConfigured } from '../firebase/config';
 
 export default function AdminPanel({
-  menuItems,
-  categories,
-  onUpdateItem,
-  onAddItem,
-  onDeleteItem,
-  onResetDefaults,
-  onClose,
-  onLogout
+  menuItems = [],
+  categories = [],
+  onUpdateItem = () => {},
+  onAddItem = () => {},
+  onDeleteItem = () => {},
+  onResetDefaults = () => {},
+  onClose = () => {},
+  onLogout = () => {}
 }) {
   const [activeTab, setActiveTab] = useState('items'); // 'items' | 'add' | 'security' | 'firebase'
   const [searchTerm, setSearchTerm] = useState('');
   const [newPin, setNewPin] = useState('');
   const [pinSuccess, setPinSuccess] = useState(false);
+
+  // Güvenli liste kontrolü
+  const safeMenuItems = Array.isArray(menuItems) ? menuItems : [];
 
   // Yeni Ürün Form Durumu
   const [newForm, setNewForm] = useState({
@@ -66,8 +69,10 @@ export default function AdminPanel({
     }, 2500);
   };
 
-  const filteredItems = menuItems.filter(item => {
-    return item.name.toLowerCase().includes(searchTerm.toLowerCase());
+  const filteredItems = safeMenuItems.filter(item => {
+    const name = item && item.name ? String(item.name).toLowerCase() : '';
+    const search = searchTerm ? String(searchTerm).toLowerCase() : '';
+    return name.includes(search);
   });
 
   return (
@@ -118,7 +123,7 @@ export default function AdminPanel({
                 : 'border-transparent text-stone-500 hover:text-stone-800'
             }`}
           >
-            Ürün & Fiyat Listesi ({menuItems.length})
+            Ürün & Fiyat Listesi ({safeMenuItems.length})
           </button>
           <button
             onClick={() => setActiveTab('add')}
@@ -180,8 +185,11 @@ export default function AdminPanel({
                     <div className="flex items-center gap-3 min-w-0">
                       <img
                         src={item.image}
-                        alt={item.name}
+                        alt={item.name || 'Ürün'}
                         className="w-12 h-12 rounded-xl object-cover shrink-0 bg-stone-100 border border-stone-200"
+                        onError={(e) => {
+                          e.target.src = 'https://images.unsplash.com/photo-1562376552-0d160a2f238d?w=400&q=80';
+                        }}
                       />
                       <div className="min-w-0">
                         <h4 className="font-bold text-xs sm:text-sm text-stone-900 truncate">{item.name}</h4>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Lock, KeyRound, AlertCircle, ShieldCheck } from 'lucide-react';
+import { X, Lock, AlertCircle, ArrowRight } from 'lucide-react';
 
 export default function AdminAuthModal({
   isOpen,
@@ -13,15 +13,20 @@ export default function AdminAuthModal({
 
   const currentPin = localStorage.getItem('waffloq_admin_pin') || '1453';
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (pin.trim() === currentPin || pin.trim() === 'waffloq123' || pin.trim() === '1453') {
+  const handleVerify = (inputPin) => {
+    const checkPin = (inputPin !== undefined ? inputPin : pin).trim();
+    if (checkPin === currentPin || checkPin === 'waffloq123' || checkPin === '1453') {
       setError(false);
       setPin('');
       onSuccess();
     } else {
       setError(true);
     }
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    handleVerify();
   };
 
   return (
@@ -66,15 +71,17 @@ export default function AdminAuthModal({
             </div>
           )}
 
-          <div className="text-[11px] text-stone-400 bg-stone-50 p-2 rounded-xl border border-stone-100">
-            Varsayılan Şifre: <span className="font-mono font-bold text-waffloq-800">1453</span>
+          <div className="text-[11px] text-stone-500 bg-stone-50 p-2.5 rounded-xl border border-stone-100 flex items-center justify-between">
+            <span>Varsayılan Şifre:</span>
+            <span className="font-mono font-bold text-waffloq-800 text-xs">1453</span>
           </div>
 
           <button
             type="submit"
-            className="w-full py-3 bg-waffloq-600 hover:bg-waffloq-700 text-white font-extrabold rounded-xl text-sm transition-colors shadow-md shadow-waffloq-600/20"
+            className="w-full py-3 bg-waffloq-600 hover:bg-waffloq-700 text-white font-extrabold rounded-xl text-sm transition-colors shadow-md shadow-waffloq-600/20 flex items-center justify-center gap-2"
           >
-            Panele Giriş Yap
+            <span>Panele Giriş Yap</span>
+            <ArrowRight className="w-4 h-4" />
           </button>
         </form>
       </div>
