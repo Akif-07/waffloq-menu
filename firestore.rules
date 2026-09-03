@@ -1,0 +1,10 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Müşteriler menü öğelerini okuyabilir (halka açık)
+    match /menuItems/{document=**} {
+      allow read: if true;
+      allow write: if true; // Geliştirme/test aşamasında kolay düzenleme için (canlıda auth kuralı eklenebilir)
+    }
+  }
+}
