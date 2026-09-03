@@ -6,6 +6,127 @@ import { isFirebaseConfigured, firebaseConfig, saveFirebaseConfig, removeFirebas
 
 const PRODUCTION_URL = 'https://waffloq-menu--waffloqmenu.europe-west4.hosted.app';
 
+// 🖨️ DKT-B823 80MM İZOLE ADİSYON YAZDIRICI (Boş sayfa ve taşma yapmaz)
+export function printThermalReceipt(order) {
+  if (!order) return;
+
+  const oldFrame = document.getElementById('receipt-print-iframe');
+  if (oldFrame) {
+    oldFrame.remove();
+  }
+
+  const iframe = document.createElement('iframe');
+  iframe.id = 'receipt-print-iframe';
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  iframe.style.visibility = 'hidden';
+  document.body.appendChild(iframe);
+
+  const itemsHtml = (order.items || []).map(it => `
+    <div style="margin-bottom: 5px;">
+      <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 13px;">
+        <span style="max-width: 48mm; word-break: break-word;">${it.name}</span>
+        <span style="white-space: nowrap;">${it.quantity || 1}x ${(it.price || 0) * (it.quantity || 1)} TL</span>
+      </div>
+      ${it.specialNote ? `<div style="font-size: 11px; padding-left: 6px; color: #222; font-style: italic;">${it.specialNote}</div>` : ''}
+    </div>
+  `).join('');
+
+  const receiptHtml = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Adisyon - Masa #${order.tableNumber}</title>
+        <style>
+          @page {
+            size: 80mm auto;
+            margin: 0;
+          }
+          * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+          }
+          html, body {
+            width: 72mm;
+            margin: 0 auto;
+            padding: 2mm 1mm 6mm 1mm;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 13px;
+            line-height: 1.35;
+            color: #000000;
+            background: #ffffff;
+          }
+          .text-center { text-align: center; }
+          .bold { font-weight: bold; }
+          .row { display: flex; justify-content: space-between; }
+        </style>
+      </head>
+      <body>
+        <div class="text-center" style="margin-bottom: 6px;">
+          <div style="font-size: 18px; font-weight: 900; letter-spacing: 2px;">*** WAFFLOQ ***</div>
+          <div style="font-size: 12px; font-weight: bold; margin-top: 2px;">WAFFLE & TOASTERY</div>
+          <div style="font-size: 11px; margin-top: 2px;">ADİSYON / SİPARİŞ FİŞİ</div>
+          <div style="font-size: 12px; margin-top: 4px;">================================</div>
+        </div>
+
+        <div style="font-size: 22px; font-weight: 900; text-align: center; border: 2px solid #000; padding: 4px; margin: 6px 0;">
+          MASA #${order.tableNumber}
+        </div>
+
+        <div style="font-size: 12px; margin-bottom: 4px;">
+          <div class="row"><span>TARİH :</span> <span>${order.orderDate || new Date().toLocaleDateString('tr-TR')}</span></div>
+          <div class="row"><span>SAAT  :</span> <span>${order.timeFormatted || new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</span></div>
+          <div class="row"><span>FİŞ NO:</span> <span>#${String(order.id || '').slice(-6).toUpperCase()}</span></div>
+          <div class="row"><span>DURUM :</span> <span>${order.status === 'pending' ? 'BEKLIYOR' : order.status === 'preparing' ? 'HAZIRLANIYOR' : 'TAMAMLANDI'}</span></div>
+        </div>
+
+        <div style="font-size: 12px; margin: 4px 0;">--------------------------------</div>
+        <div class="row bold" style="font-size: 12px;">
+          <span>ÜRÜN</span>
+          <span>AD.  TUTAR</span>
+        </div>
+        <div style="font-size: 12px; margin: 4px 0;">--------------------------------</div>
+
+        <div style="margin-bottom: 6px;">
+          ${itemsHtml}
+        </div>
+
+        <div style="font-size: 12px; margin: 4px 0;">================================</div>
+        <div class="row bold" style="font-size: 18px; margin: 6px 0;">
+          <span>TOPLAM :</span>
+          <span>${order.totalAmount || 0} TL</span>
+        </div>
+        <div style="font-size: 12px; margin: 4px 0;">================================</div>
+
+        <div class="text-center" style="font-size: 11px; margin-top: 8px;">
+          <div>Wi-Fi: ${SHOP_INFO.wifiName} | Şifre: ${SHOP_INFO.wifiPass}</div>
+          <div style="margin-top: 4px; font-weight: bold;">Bizi Tercih Ettiğiniz İçin</div>
+          <div>Teşekkür Ederiz! Afiyet Olsun.</div>
+        </div>
+
+        <!-- Otomatik Kesim Payı (Feed) -->
+        <div style="height: 10mm;"></div>
+      </body>
+    </html>
+  `;
+
+  const frameDoc = iframe.contentWindow.document;
+  frameDoc.open();
+  frameDoc.write(receiptHtml);
+  frameDoc.close();
+
+  setTimeout(() => {
+    iframe.contentWindow.focus();
+    iframe.contentWindow.print();
+  }, 200);
+}
+
 export default function AdminPanel({
   menuItems = [],
   categories = [],
@@ -161,10 +282,7 @@ export default function AdminPanel({
 
   // 🖨️ 80mm Termal Adisyon Yazdırma
   const handlePrintReceipt = (order) => {
-    setReceiptModalOrder(order);
-    setTimeout(() => {
-      window.print();
-    }, 250);
+    printThermalReceipt(order);
   };
 
   const handleSaveCloudConfig = (e) => {
@@ -254,111 +372,7 @@ export default function AdminPanel({
       display: 'flex',
       flexDirection: 'column'
     }}>
-      {/* 🖨️ 80MM TERMAL YAZICI CSS STİLİ (DKT-B823) */}
-      <style>{`
-        @media print {
-          /* Sayfanın geri kalan her şeyini gizle */
-          body * {
-            visibility: hidden !important;
-          }
-          /* Sadece termal adisyon alanını göster */
-          #thermal-receipt-area, #thermal-receipt-area * {
-            visibility: visible !important;
-          }
-          #thermal-receipt-area {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 72mm !important;
-            margin: 0 !important;
-            padding: 2mm 1mm !important;
-            font-family: 'Courier New', Courier, monospace !important;
-            font-size: 13px !important;
-            color: #000000 !important;
-            background: #ffffff !important;
-            box-shadow: none !important;
-            border: none !important;
-          }
-          @page {
-            size: 80mm auto;
-            margin: 0mm;
-          }
-        }
-      `}</style>
 
-      {/* 🖨️ YAZDIRILACAK 80MM TERMAL FİŞ ALANI */}
-      {receiptModalOrder && (
-        <div
-          id="thermal-receipt-area"
-          style={{
-            display: 'none', // Ekranda normalde gizli, print esnasında CSS ile görünür
-            width: '72mm',
-            color: '#000000',
-            backgroundColor: '#ffffff',
-            fontFamily: "'Courier New', Courier, monospace",
-            fontSize: '13px',
-            lineHeight: 1.35
-          }}
-        >
-          <div style={{ textAlign: 'center', marginBottom: '8px' }}>
-            <div style={{ fontSize: '18px', fontWeight: 900, letterSpacing: '2px' }}>*** WAFFLOQ ***</div>
-            <div style={{ fontSize: '12px', fontWeight: 700 }}>WAFFLE & TOASTERY</div>
-            <div style={{ fontSize: '11px', marginTop: '2px' }}>ADİSYON / MUTFAK SİPARİŞ FİŞİ</div>
-            <div style={{ fontSize: '12px' }}>================================</div>
-          </div>
-
-          <div style={{ marginBottom: '8px', fontSize: '13px' }}>
-            <div style={{ fontSize: '20px', fontWeight: 900, textAlign: 'center', margin: '4px 0', border: '2px solid #000', padding: '3px' }}>
-              MASA #{receiptModalOrder.tableNumber}
-            </div>
-            <div><strong>TARİH :</strong> {receiptModalOrder.orderDate || new Date().toLocaleDateString('tr-TR')}</div>
-            <div><strong>SAAT  :</strong> {receiptModalOrder.timeFormatted || new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</div>
-            <div><strong>FİŞ NO:</strong> #{String(receiptModalOrder.id || '').slice(-6).toUpperCase()}</div>
-            <div><strong>DURUM :</strong> {receiptModalOrder.status === 'pending' ? 'BEKLIYOR' : receiptModalOrder.status === 'preparing' ? 'HAZIRLANIYOR' : 'TAMAMLANDI'}</div>
-          </div>
-
-          <div style={{ fontSize: '12px' }}>--------------------------------</div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '12px' }}>
-            <span>ÜRÜN</span>
-            <span>AD.  TUTAR</span>
-          </div>
-          <div style={{ fontSize: '12px' }}>--------------------------------</div>
-
-          {/* Kalemler */}
-          <div style={{ marginBottom: '8px' }}>
-            {(Array.isArray(receiptModalOrder.items) ? receiptModalOrder.items : []).map((it, idx) => (
-              <div key={idx} style={{ marginBottom: '6px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold' }}>
-                  <span style={{ maxWidth: '46mm', overflow: 'hidden' }}>{it.name}</span>
-                  <span>{it.quantity || 1}x  {(it.price || 0) * (it.quantity || 1)} TL</span>
-                </div>
-                {it.specialNote && (
-                  <div style={{ fontSize: '11px', paddingLeft: '8px', color: '#222' }}>
-                    {it.specialNote}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-
-          <div style={{ fontSize: '12px' }}>================================</div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '18px', fontWeight: 900, margin: '6px 0' }}>
-            <span>TOPLAM :</span>
-            <span>{receiptModalOrder.totalAmount || 0} TL</span>
-          </div>
-          <div style={{ fontSize: '12px' }}>================================</div>
-
-          <div style={{ textAlign: 'center', marginTop: '10px', fontSize: '11px' }}>
-            <div>Wi-Fi: {SHOP_INFO.wifiName} | Şifre: {SHOP_INFO.wifiPass}</div>
-            <div style={{ marginTop: '4px', fontWeight: 'bold' }}>Bizi Tercih Ettiğiniz İçin</div>
-            <div>Teşekkür Ederiz! Afiyet Olsun.</div>
-            <div style={{ marginTop: '8px', fontSize: '10px' }}>www.waffloq.com</div>
-          </div>
-
-          {/* Termal Yazıcı Kağıt Kesme Boşluğu (Feed) */}
-          <div style={{ height: '20mm' }}></div>
-        </div>
-      )}
 
       {/* 🔔 YENİ SİPARİŞ GELİNCE YANIP SÖNEN ÇAĞRI BANNER'I */}
       {orderAlert.show && (
