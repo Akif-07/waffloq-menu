@@ -10,21 +10,10 @@ const PRODUCTION_URL = 'https://waffloq-menu--waffloqmenu.europe-west4.hosted.ap
 export function printThermalReceipt(order) {
   if (!order) return;
 
-  const oldFrame = document.getElementById('receipt-print-iframe');
-  if (oldFrame) {
-    oldFrame.remove();
-  }
-
-  const iframe = document.createElement('iframe');
-  iframe.id = 'receipt-print-iframe';
-  iframe.style.position = 'fixed';
-  iframe.style.right = '0';
-  iframe.style.bottom = '0';
-  iframe.style.width = '0';
-  iframe.style.height = '0';
-  iframe.style.border = '0';
-  iframe.style.visibility = 'hidden';
-  document.body.appendChild(iframe);
+  const width = 380;
+  const height = 600;
+  const left = (window.screen.width - width) / 2;
+  const top = (window.screen.height - height) / 2;
 
   const itemsHtml = (order.items || []).map(it => `
     <div style="margin-bottom: 5px;">
@@ -55,7 +44,7 @@ export function printThermalReceipt(order) {
           html, body {
             width: 72mm;
             margin: 0 auto;
-            padding: 2mm 1mm 6mm 1mm;
+            padding: 4mm 1mm 8mm 1mm;
             font-family: 'Courier New', Courier, monospace;
             font-size: 13px;
             line-height: 1.35;
@@ -110,11 +99,46 @@ export function printThermalReceipt(order) {
           <div>Teşekkür Ederiz! Afiyet Olsun.</div>
         </div>
 
-        <!-- Otomatik Kesim Payı (Feed) -->
+        <!-- 80mm Bıçak Kesim Payı (Feed) -->
         <div style="height: 10mm;"></div>
       </body>
     </html>
   `;
+
+  // 1. Önce doğrudan yeni pencerede yazdırmayı dene (Chrome'da asla boş basmaz)
+  try {
+    const printWindow = window.open('', '_blank', `width=${width},height=${height},left=${left},top=${top}`);
+    if (printWindow) {
+      printWindow.document.open();
+      printWindow.document.write(receiptHtml);
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => {
+        printWindow.print();
+      }, 250);
+      return;
+    }
+  } catch (e) {
+    console.warn("Popup engellendi, iframe ile yazdırılıyor:", e);
+  }
+
+  // 2. Popup engellendiyse görünür render iframe'i ile yazdır
+  let oldFrame = document.getElementById('receipt-print-iframe');
+  if (oldFrame) {
+    oldFrame.remove();
+  }
+
+  const iframe = document.createElement('iframe');
+  iframe.id = 'receipt-print-iframe';
+  iframe.style.position = 'fixed';
+  iframe.style.left = '0';
+  iframe.style.top = '0';
+  iframe.style.width = '72mm';
+  iframe.style.height = '120mm';
+  iframe.style.zIndex = '-9999';
+  iframe.style.opacity = '0';
+  iframe.style.border = 'none';
+  document.body.appendChild(iframe);
 
   const frameDoc = iframe.contentWindow.document;
   frameDoc.open();
@@ -124,7 +148,7 @@ export function printThermalReceipt(order) {
   setTimeout(() => {
     iframe.contentWindow.focus();
     iframe.contentWindow.print();
-  }, 200);
+  }, 250);
 }
 
 export default function AdminPanel({
