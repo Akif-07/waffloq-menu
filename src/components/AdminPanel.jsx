@@ -604,7 +604,7 @@ export default function AdminPanel({
                 }}
               />
 
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <button
                   onClick={() => setSelectedCategoryFilter('all')}
                   style={{
@@ -636,6 +636,21 @@ export default function AdminPanel({
                   🧇 Waffle'lar
                 </button>
                 <button
+                  onClick={() => setSelectedCategoryFilter('menus')}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '10px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    border: 'none',
+                    backgroundColor: selectedCategoryFilter === 'menus' ? '#0f3c3a' : '#f1f5f9',
+                    color: selectedCategoryFilter === 'menus' ? '#ffffff' : '#475569'
+                  }}
+                >
+                  🍽️ Menüler
+                </button>
+                <button
                   onClick={() => setSelectedCategoryFilter('drinks')}
                   style={{
                     padding: '8px 16px',
@@ -649,6 +664,21 @@ export default function AdminPanel({
                   }}
                 >
                   🥤 İçecekler
+                </button>
+                <button
+                  onClick={() => setSelectedCategoryFilter('extras')}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '10px',
+                    fontSize: '12px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    border: 'none',
+                    backgroundColor: selectedCategoryFilter === 'extras' ? '#0f3c3a' : '#f1f5f9',
+                    color: selectedCategoryFilter === 'extras' ? '#ffffff' : '#475569'
+                  }}
+                >
+                  🍓 Meyveler
                 </button>
               </div>
             </div>
@@ -859,7 +889,9 @@ export default function AdminPanel({
                     }}
                   >
                     <option value="waffles">🧇 Waffle Çeşitleri</option>
+                    <option value="menus">🍽️ Avantajlı Menüler</option>
                     <option value="drinks">🥤 İçecekler</option>
+                    <option value="extras">🍓 Ekstra Meyveler</option>
                   </select>
                 </div>
 

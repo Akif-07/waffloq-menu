@@ -2,9 +2,10 @@ import { db, isFirebaseConfigured } from './config';
 import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { DEFAULT_MENU_ITEMS, WAFFLE_BUILDER_DATA, DEFAULT_CATEGORIES } from '../data/defaultMenu';
 
-const STORAGE_KEY_MENU = 'waffloqmenu_items';
-const STORAGE_KEY_BUILDER = 'waffloqmenu_builder';
-const STORAGE_KEY_CATEGORIES = 'waffloqmenu_categories';
+// v3: Kullanıcının sunduğu güncel resmi Trendyol/TGO Yemek listesi
+const STORAGE_KEY_MENU = 'waffloqmenu_items_v3';
+const STORAGE_KEY_BUILDER = 'waffloqmenu_builder_v3';
+const STORAGE_KEY_CATEGORIES = 'waffloqmenu_categories_v3';
 
 export const menuService = {
   // Menü ürünlerini getir
@@ -24,15 +25,22 @@ export const menuService = {
       }
     }
 
-    // Yerel depolama fallback
+    // Yerel depolama kontrolü
     const saved = localStorage.getItem(STORAGE_KEY_MENU);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
       } catch (e) {
         console.error(e);
       }
     }
+
+    // Eski önbellekleri temizle ve yeni listeyi kaydet
+    localStorage.removeItem('waffloqmenu_items');
+    localStorage.removeItem('waffloqmenu_items_v2');
     localStorage.setItem(STORAGE_KEY_MENU, JSON.stringify(DEFAULT_MENU_ITEMS));
     return DEFAULT_MENU_ITEMS;
   },
@@ -114,11 +122,14 @@ export const menuService = {
         console.error(e);
       }
     }
+    localStorage.setItem(STORAGE_KEY_CATEGORIES, JSON.stringify(DEFAULT_CATEGORIES));
     return DEFAULT_CATEGORIES;
   },
 
   // Menüyü varsayılana sıfırla
   async resetToDefaults() {
+    localStorage.removeItem('waffloqmenu_items');
+    localStorage.removeItem('waffloqmenu_items_v2');
     localStorage.setItem(STORAGE_KEY_MENU, JSON.stringify(DEFAULT_MENU_ITEMS));
     localStorage.setItem(STORAGE_KEY_BUILDER, JSON.stringify(WAFFLE_BUILDER_DATA));
     localStorage.setItem(STORAGE_KEY_CATEGORIES, JSON.stringify(DEFAULT_CATEGORIES));
