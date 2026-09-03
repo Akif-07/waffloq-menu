@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Check, RefreshCw, KeyRound, Lock, LogOut, Bell, Clock, CheckCircle2 } from 'lucide-react';
+import { X, Plus, Trash2, Check, RefreshCw, KeyRound, Lock, LogOut, Bell, Clock, Database, ArrowLeft } from 'lucide-react';
 import { isFirebaseConfigured } from '../firebase/config';
 import { orderService } from '../firebase/orderService';
 
@@ -19,41 +19,57 @@ export default function AdminPanel({
   const [pinSuccess, setPinSuccess] = useState(false);
   const [liveOrders, setLiveOrders] = useState([]);
 
+  // Güvenli dizi kontrolleri
   const safeMenuItems = Array.isArray(menuItems) ? menuItems : [];
+  const safeLiveOrders = Array.isArray(liveOrders) ? liveOrders : [];
 
   useEffect(() => {
-    loadOrders();
-
-    const handleOrderEvent = () => {
+    try {
       loadOrders();
-    };
-
-    window.addEventListener('waffloq_new_order', handleOrderEvent);
-    window.addEventListener('storage', handleOrderEvent);
-
-    return () => {
-      window.removeEventListener('waffloq_new_order', handleOrderEvent);
-      window.removeEventListener('storage', handleOrderEvent);
-    };
+      const handleOrderEvent = () => {
+        loadOrders();
+      };
+      window.addEventListener('waffloq_new_order', handleOrderEvent);
+      window.addEventListener('storage', handleOrderEvent);
+      return () => {
+        window.removeEventListener('waffloq_new_order', handleOrderEvent);
+        window.removeEventListener('storage', handleOrderEvent);
+      };
+    } catch (err) {
+      console.error("Orders load error:", err);
+    }
   }, []);
 
   const loadOrders = () => {
-    const orders = orderService.getLocalOrders();
-    setLiveOrders(orders);
+    try {
+      const orders = orderService.getLocalOrders();
+      setLiveOrders(Array.isArray(orders) ? orders : []);
+    } catch (e) {
+      console.error(e);
+      setLiveOrders([]);
+    }
   };
 
   const handleStatusChange = async (orderId, currentStatus) => {
-    let nextStatus = 'preparing';
-    if (currentStatus === 'preparing') nextStatus = 'completed';
-    else if (currentStatus === 'completed') nextStatus = 'pending';
-    
-    const updated = await orderService.updateOrderStatus(orderId, nextStatus);
-    setLiveOrders(updated);
+    try {
+      let nextStatus = 'preparing';
+      if (currentStatus === 'preparing') nextStatus = 'completed';
+      else if (currentStatus === 'completed') nextStatus = 'pending';
+      
+      const updated = await orderService.updateOrderStatus(orderId, nextStatus);
+      setLiveOrders(Array.isArray(updated) ? updated : []);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const handleDeleteOrder = async (orderId) => {
-    const updated = await orderService.deleteOrder(orderId);
-    setLiveOrders(updated);
+    try {
+      const updated = await orderService.deleteOrder(orderId);
+      setLiveOrders(Array.isArray(updated) ? updated : []);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // Yeni Ürün Form Durumu
@@ -106,24 +122,25 @@ export default function AdminPanel({
   };
 
   const filteredItems = safeMenuItems.filter(item => {
-    const name = item && item.name ? String(item.name).toLowerCase() : '';
+    if (!item) return false;
+    const name = item.name ? String(item.name).toLowerCase() : '';
     const search = searchTerm ? String(searchTerm).toLowerCase() : '';
     return name.includes(search);
   });
 
-  const pendingOrdersCount = liveOrders.filter(o => o.status === 'pending').length;
+  const pendingOrdersCount = safeLiveOrders.filter(o => o && o.status === 'pending').length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-waffloq-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[92vh] overflow-hidden text-stone-800 shadow-2xl relative border border-waffloq-200 flex flex-col">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-waffloq-950/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4">
+      <div className="bg-white rounded-3xl max-w-4xl w-full my-auto max-h-[94vh] overflow-hidden text-stone-800 shadow-2xl relative border-2 border-waffloq-300 flex flex-col">
         {/* Üst Başlık */}
-        <div className="p-4 sm:p-5 bg-gradient-to-r from-waffloq-950 to-waffloq-900 text-white flex items-center justify-between border-b border-waffloq-400/20">
+        <div className="p-4 sm:p-5 bg-gradient-to-r from-waffloq-950 via-waffloq-900 to-waffloq-800 text-white flex items-center justify-between border-b border-waffloq-400/20">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-waffloq-800 border border-waffloq-400/30 flex items-center justify-center text-waffloq-300 shadow-xs">
               <Lock className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-black text-white font-brand">WAFFLOQ Yönetim Paneli</h2>
+              <h2 className="text-lg sm:text-xl font-black text-white font-brand">WAFFLOQ Yönetim Paneli</h2>
               <div className="flex items-center gap-2 text-xs">
                 <span className={`inline-block w-2 h-2 rounded-full ${isFirebaseConfigured ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
                 <span className="text-waffloq-200 text-[11px]">
@@ -136,15 +153,16 @@ export default function AdminPanel({
           <div className="flex items-center gap-2">
             <button
               onClick={onLogout}
-              className="flex items-center gap-1 text-xs text-rose-200 hover:text-white bg-rose-950/50 hover:bg-rose-900 border border-rose-500/30 py-1.5 px-3 rounded-xl transition-all"
+              className="flex items-center gap-1.5 text-xs text-rose-200 hover:text-white bg-rose-950/60 hover:bg-rose-900 border border-rose-500/30 py-1.5 px-3 rounded-xl transition-all"
               title="Güvenli Çıkış Yap"
             >
               <LogOut className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Çıkış Yap</span>
+              <span className="font-bold hidden xs:inline">Çıkış Yap</span>
             </button>
             <button
               onClick={onClose}
               className="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+              title="Kapat"
             >
               <X className="w-5 h-5" />
             </button>
@@ -157,14 +175,14 @@ export default function AdminPanel({
             onClick={() => setActiveTab('orders')}
             className={`pb-2.5 px-3 border-b-2 transition-colors flex items-center gap-1.5 shrink-0 ${
               activeTab === 'orders'
-                ? 'border-waffloq-600 text-waffloq-800 font-extrabold'
+                ? 'border-waffloq-600 text-waffloq-800 font-black'
                 : 'border-transparent text-stone-500 hover:text-stone-800'
             }`}
           >
             <Bell className="w-3.5 h-3.5" />
-            <span>Masa Siparişleri ({liveOrders.length})</span>
+            <span>Masa Siparişleri ({safeLiveOrders.length})</span>
             {pendingOrdersCount > 0 && (
-              <span className="bg-berry text-white text-[10px] px-1.5 py-0.5 rounded-full animate-pulse">
+              <span className="bg-berry text-white text-[10px] px-1.5 py-0.5 rounded-full font-black animate-pulse">
                 {pendingOrdersCount} Yeni
               </span>
             )}
@@ -173,7 +191,7 @@ export default function AdminPanel({
             onClick={() => setActiveTab('items')}
             className={`pb-2.5 px-3 border-b-2 transition-colors shrink-0 ${
               activeTab === 'items'
-                ? 'border-waffloq-600 text-waffloq-800 font-extrabold'
+                ? 'border-waffloq-600 text-waffloq-800 font-black'
                 : 'border-transparent text-stone-500 hover:text-stone-800'
             }`}
           >
@@ -183,7 +201,7 @@ export default function AdminPanel({
             onClick={() => setActiveTab('add')}
             className={`pb-2.5 px-3 border-b-2 transition-colors flex items-center gap-1 shrink-0 ${
               activeTab === 'add'
-                ? 'border-waffloq-600 text-waffloq-800 font-extrabold'
+                ? 'border-waffloq-600 text-waffloq-800 font-black'
                 : 'border-transparent text-stone-500 hover:text-stone-800'
             }`}
           >
@@ -194,7 +212,7 @@ export default function AdminPanel({
             onClick={() => setActiveTab('security')}
             className={`pb-2.5 px-3 border-b-2 transition-colors flex items-center gap-1 shrink-0 ${
               activeTab === 'security'
-                ? 'border-waffloq-600 text-waffloq-800 font-extrabold'
+                ? 'border-waffloq-600 text-waffloq-800 font-black'
                 : 'border-transparent text-stone-500 hover:text-stone-800'
             }`}
           >
@@ -205,7 +223,7 @@ export default function AdminPanel({
             onClick={() => setActiveTab('firebase')}
             className={`pb-2.5 px-3 border-b-2 transition-colors shrink-0 ${
               activeTab === 'firebase'
-                ? 'border-waffloq-600 text-waffloq-800 font-extrabold'
+                ? 'border-waffloq-600 text-waffloq-800 font-black'
                 : 'border-transparent text-stone-500 hover:text-stone-800'
             }`}
           >
@@ -223,7 +241,7 @@ export default function AdminPanel({
                   <h3 className="font-bold text-sm text-stone-800">Masalardan Gelen Anlık Siparişler</h3>
                   <p className="text-xs text-stone-500">Müşterilerin 'Garsona İlet' dediği siparişler burada listelenir.</p>
                 </div>
-                {liveOrders.length > 0 && (
+                {safeLiveOrders.length > 0 && (
                   <button
                     onClick={() => {
                       if (confirm("Tüm sipariş geçmişini temizlemek istiyor musunuz?")) {
@@ -231,25 +249,25 @@ export default function AdminPanel({
                         setLiveOrders([]);
                       }
                     }}
-                    className="text-xs text-stone-400 hover:text-berry font-bold"
+                    className="text-xs text-stone-400 hover:text-berry font-bold transition-colors"
                   >
                     Tümünü Temizle
                   </button>
                 )}
               </div>
 
-              {liveOrders.length === 0 ? (
-                <div className="p-12 text-center bg-white rounded-2xl border border-stone-200">
-                  <Bell className="w-8 h-8 text-stone-300 mx-auto mb-2" />
-                  <p className="font-bold text-stone-700 text-sm">Henüz yeni sipariş bulunmuyor</p>
-                  <p className="text-xs text-stone-400 mt-1">Müşteriler QR kodla sipariş verdikçe anında buraya düşecektir.</p>
+              {safeLiveOrders.length === 0 ? (
+                <div className="p-12 text-center bg-white rounded-3xl border border-stone-200">
+                  <Bell className="w-10 h-10 text-stone-300 mx-auto mb-2" />
+                  <p className="font-bold text-stone-700 text-sm">Henüz bekleyen sipariş bulunmuyor</p>
+                  <p className="text-xs text-stone-400 mt-1">Müşteriler QR kodla masalarından sipariş verdikçe anında buraya düşecektir.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {liveOrders.map((order) => {
+                  {safeLiveOrders.map((order) => {
+                    if (!order) return null;
                     const isPending = order.status === 'pending';
                     const isPreparing = order.status === 'preparing';
-                    const isCompleted = order.status === 'completed';
 
                     return (
                       <div
@@ -295,7 +313,7 @@ export default function AdminPanel({
 
                         {/* Sipariş Kalemleri */}
                         <div className="space-y-1.5 text-xs">
-                          {(order.items || []).map((item, i) => (
+                          {(Array.isArray(order.items) ? order.items : []).map((item, i) => (
                             <div key={i} className="flex justify-between items-center bg-stone-50 p-2 rounded-xl border border-stone-100">
                               <div className="flex items-center gap-2">
                                 <span className="font-bold text-waffloq-900">{item.quantity || 1}x</span>
