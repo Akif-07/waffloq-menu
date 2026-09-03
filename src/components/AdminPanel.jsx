@@ -1,21 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { SHOP_INFO } from '../data/defaultMenu';
+import { orderService, playOrderSound } from '../firebase/orderService';
+import { isFirebaseConfigured, firebaseConfig, saveFirebaseConfig, removeFirebaseConfig } from '../firebase/config';
 
 const PRODUCTION_URL = 'https://waffloq-menu--waffloqmenu.europe-west4.hosted.app';
-const STORAGE_KEY_ORDERS = 'waffloq_active_orders';
-
-function getOrders() {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY_ORDERS);
-    if (saved) return JSON.parse(saved);
-  } catch (e) { console.error(e); }
-  return [];
-}
-
-function saveOrders(orders) {
-  localStorage.setItem(STORAGE_KEY_ORDERS, JSON.stringify(orders));
-}
 
 export default function AdminPanel({
   menuItems = [],
@@ -27,14 +16,25 @@ export default function AdminPanel({
   onClose,
   onLogout
 }) {
-  const [activeTab, setActiveTab] = useState('orders'); // 'orders' | 'items' | 'add' | 'qr' | 'security'
+  const [activeTab, setActiveTab] = useState('orders'); // 'orders' | 'items' | 'add' | 'qr' | 'cloud' | 'security'
   const [orders, setOrders] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('all');
   
+  // Yeni Sipariş Bildirim Banner'ı
+  const [orderAlert, setOrderAlert] = useState({ show: false, table: '', amount: 0, time: '' });
+
   // Şifre değiştirme state
   const [newPin, setNewPin] = useState('');
   const [pinMessage, setPinMessage] = useState('');
+
+  // Firebase Bulut Ayarları Formu
+  const [cloudApiKey, setCloudApiKey] = useState(firebaseConfig.apiKey || '');
+  const [cloudProjectId, setCloudProjectId] = useState(firebaseConfig.projectId || 'waffloqmenu');
+  const [cloudAppId, setCloudAppId] = useState(firebaseConfig.appId || '');
+  const [cloudAuthDomain, setCloudAuthDomain] = useState(firebaseConfig.authDomain || 'waffloqmenu.firebaseapp.com');
+  const [cloudStorageBucket, setCloudStorageBucket] = useState(firebaseConfig.storageBucket || 'waffloqmenu.appspot.com');
+  const [cloudMessage, setCloudMessage] = useState('');
 
   // Yeni ürün ekleme state
   const [newName, setNewName] = useState('');
@@ -49,40 +49,68 @@ export default function AdminPanel({
 
   const items = Array.isArray(menuItems) ? menuItems : [];
 
-  // Siparişleri dinle
+  // CANLI SİPARİŞ DİNLEYİCİSİ (onSnapshot)
   useEffect(() => {
-    setOrders(getOrders());
-    const handler = () => setOrders(getOrders());
-    window.addEventListener('waffloq_new_order', handler);
-    window.addEventListener('storage', handler);
-    const interval = setInterval(handler, 3000);
+    const unsubscribe = orderService.subscribeToOrders(
+      (updatedOrders) => {
+        setOrders(updatedOrders || []);
+      },
+      (newOrder) => {
+        // Zil çalındı, banner göster
+        setOrderAlert({
+          show: true,
+          table: newOrder.tableNumber || '?',
+          amount: newOrder.totalAmount || 0,
+          time: newOrder.timeFormatted || 'Az önce'
+        });
+        // 12 saniye sonra banner'ı otomatik kapat
+        setTimeout(() => {
+          setOrderAlert(prev => ({ ...prev, show: false }));
+        }, 12000);
+      }
+    );
+
     return () => {
-      window.removeEventListener('waffloq_new_order', handler);
-      window.removeEventListener('storage', handler);
-      clearInterval(interval);
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
     };
   }, []);
 
-  const updateOrderStatus = (id, current) => {
+  const updateOrderStatus = async (id, current) => {
     const next = current === 'pending' ? 'preparing' : current === 'preparing' ? 'completed' : 'pending';
-    const updated = orders.map(o => o.id === id ? { ...o, status: next } : o);
-    saveOrders(updated);
-    setOrders(updated);
+    const updated = await orderService.updateOrderStatus(id, next);
+    setOrders(updated || []);
   };
 
-  const deleteOrder = (id) => {
+  const deleteOrder = async (id) => {
     if (confirm('Bu siparişi silmek istediğinize emin misiniz?')) {
-      const updated = orders.filter(o => o.id !== id);
-      saveOrders(updated);
-      setOrders(updated);
+      const updated = await orderService.deleteOrder(id);
+      setOrders(updated || []);
     }
   };
 
-  const clearAllOrders = () => {
+  const clearAllOrders = async () => {
     if (confirm('Tüm sipariş geçmişini silmek istiyor musunuz?')) {
-      localStorage.removeItem(STORAGE_KEY_ORDERS);
+      await orderService.clearAllOrders();
       setOrders([]);
     }
+  };
+
+  const handleSaveCloudConfig = (e) => {
+    e.preventDefault();
+    if (!cloudApiKey.trim() || !cloudProjectId.trim()) {
+      alert("Lütfen en azından API Key ve Project ID alanlarını giriniz.");
+      return;
+    }
+    const newConfig = {
+      apiKey: cloudApiKey.trim(),
+      projectId: cloudProjectId.trim(),
+      authDomain: cloudAuthDomain.trim() || `${cloudProjectId.trim()}.firebaseapp.com`,
+      storageBucket: cloudStorageBucket.trim() || `${cloudProjectId.trim()}.appspot.com`,
+      appId: cloudAppId.trim() || "1:1234567890:web:abcdef"
+    };
+    saveFirebaseConfig(newConfig);
   };
 
   const handleAddItem = (e) => {
@@ -141,6 +169,69 @@ export default function AdminPanel({
       display: 'flex',
       flexDirection: 'column'
     }}>
+      {/* 🔔 YENİ SİPARİŞ GELİNCE YANIP SÖNEN ÇAĞRI BANNER'I */}
+      {orderAlert.show && (
+        <div style={{
+          backgroundColor: '#ea580c',
+          color: '#ffffff',
+          padding: '14px 24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          fontWeight: 800,
+          fontSize: '15px',
+          boxShadow: '0 8px 25px rgba(234, 88, 12, 0.4)',
+          position: 'sticky',
+          top: 0,
+          zIndex: 9999,
+          animation: 'pulse 1.5s infinite'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '24px' }}>🔔</span>
+            <div>
+              <span>YENİ MASA SİPARİŞİ GELDİ! — MASA #{orderAlert.table}</span>
+              <span style={{ marginLeft: '12px', fontSize: '13px', backgroundColor: 'rgba(0,0,0,0.2)', padding: '3px 10px', borderRadius: '8px' }}>
+                Tutar: {orderAlert.amount} TL • {orderAlert.time}
+              </span>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={() => {
+                setActiveTab('orders');
+                setOrderAlert(prev => ({ ...prev, show: false }));
+              }}
+              style={{
+                backgroundColor: '#ffffff',
+                color: '#ea580c',
+                border: 'none',
+                padding: '8px 16px',
+                borderRadius: '10px',
+                fontWeight: 900,
+                fontSize: '13px',
+                cursor: 'pointer'
+              }}
+            >
+              Siparişi İncele
+            </button>
+            <button
+              onClick={() => setOrderAlert(prev => ({ ...prev, show: false }))}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#ffffff',
+                fontSize: '20px',
+                cursor: 'pointer',
+                padding: '4px 8px'
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ÜST YÖNETİCİ ÇUBUĞU (NAVBAR) */}
       <header style={{
         backgroundColor: '#082524',
@@ -180,24 +271,44 @@ export default function AdminPanel({
                 WAFFLOQ
               </h1>
               <span style={{
-                backgroundColor: '#23958e',
+                backgroundColor: isFirebaseConfigured ? '#059669' : '#d97706',
                 color: '#ffffff',
                 fontSize: '11px',
                 fontWeight: 800,
                 padding: '2px 8px',
                 borderRadius: '6px'
               }}>
-                YÖNETİM & MUTFAK
+                {isFirebaseConfigured ? '🟢 BULUT CANLI BAĞLI' : '🟡 YEREL MOD'}
               </span>
             </div>
             <p style={{ margin: 0, fontSize: '11px', color: '#7ed1cb' }}>
-              Canlı Masa Siparişleri ve Menü Yönetim Ekranı
+              Restoran POS & Mutfak Canlı Sipariş Ekranı
             </p>
           </div>
         </div>
 
         {/* Butonlar */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <button
+            onClick={() => playOrderSound()}
+            title="Sipariş zil sesini test et"
+            style={{
+              backgroundColor: '#0f3c3a',
+              color: '#7ed1cb',
+              border: '1px solid #17625e',
+              borderRadius: '12px',
+              padding: '10px 14px',
+              fontSize: '12px',
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            🔊 Zili Test Et
+          </button>
+
           <button
             onClick={onClose}
             style={{
@@ -333,6 +444,36 @@ export default function AdminPanel({
         </button>
 
         <button
+          onClick={() => setActiveTab('cloud')}
+          style={{
+            padding: '16px 20px',
+            fontSize: '14px',
+            fontWeight: 800,
+            border: 'none',
+            background: 'none',
+            cursor: 'pointer',
+            borderBottom: activeTab === 'cloud' ? '3px solid #23958e' : '3px solid transparent',
+            color: activeTab === 'cloud' ? '#0f3c3a' : '#64748b',
+            whiteSpace: 'nowrap',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}
+        >
+          <span>🔥 Bulut Bağlantısı</span>
+          <span style={{
+            fontSize: '10px',
+            backgroundColor: isFirebaseConfigured ? '#dcfce7' : '#fef3c7',
+            color: isFirebaseConfigured ? '#166534' : '#92400e',
+            padding: '2px 6px',
+            borderRadius: '6px',
+            fontWeight: 800
+          }}>
+            {isFirebaseConfigured ? 'Aktif' : 'Ayarla'}
+          </span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('security')}
           style={{
             padding: '16px 20px',
@@ -369,7 +510,9 @@ export default function AdminPanel({
                   Masalardan Gelen Anlık Siparişler
                 </h2>
                 <p style={{ margin: '4px 0 0', fontSize: '13px', color: '#64748b' }}>
-                  Müşteriler masadaki QR kodu okutup 'Garsona İlet / Sipariş Ver' dediğinde buraya canlı olarak düşer.
+                  {isFirebaseConfigured
+                    ? '🟢 Firebase Bulut Canlı Dinleniyor (onSnapshot): Müşteriler masadan sipariş verdiği saniyede zil çalar ve buraya düşer.'
+                    : '🟡 Yerel Mod: Siparişlerin farklı cihazlar arasında canlı senkronize olması için "Bulut Bağlantısı" sekmesini açınız.'}
                 </p>
               </div>
 
@@ -410,8 +553,24 @@ export default function AdminPanel({
                   Şu Anda Bekleyen Sipariş Yok
                 </h3>
                 <p style={{ fontSize: '13px', color: '#64748b', maxWidth: '460px', margin: '0 auto' }}>
-                  Müşteriler masalarından QR kodla sipariş verdikçe sesli ve görsel bildirimle anında burada listelenecektir.
+                  Müşteriler masalarından QR kodla sipariş verdikçe zil çalarak ekrana düşecektir.
                 </p>
+                <div style={{ marginTop: '16px' }}>
+                  <button
+                    onClick={() => playOrderSound()}
+                    style={{
+                      backgroundColor: '#f1f5f9',
+                      border: '1px solid #cbd5e1',
+                      padding: '8px 16px',
+                      borderRadius: '10px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🔊 Zil Sesini Dinle (Test)
+                  </button>
+                </div>
               </div>
             ) : (
               <div style={{
@@ -423,7 +582,6 @@ export default function AdminPanel({
                   if (!order) return null;
                   const isPending = order.status === 'pending';
                   const isPreparing = order.status === 'preparing';
-                  const isCompleted = order.status === 'completed';
 
                   return (
                     <div
@@ -513,12 +671,12 @@ export default function AdminPanel({
                                     fontSize: '11px',
                                     color: '#b45309',
                                     backgroundColor: '#fef3c7',
-                                    padding: '2px 6px',
+                                    padding: '3px 8px',
                                     borderRadius: '6px',
                                     marginTop: '4px',
-                                    display: 'inline-block'
+                                    fontWeight: 600
                                   }}>
-                                    Not: {item.specialNote}
+                                    {item.specialNote}
                                   </div>
                                 )}
                               </div>
@@ -683,7 +841,7 @@ export default function AdminPanel({
               </div>
             </div>
 
-            {/* Tablo / Kart Listesi */}
+            {/* Kart Listesi */}
             <div style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
@@ -1144,7 +1302,227 @@ export default function AdminPanel({
           </div>
         )}
 
-        {/* 5. SEKME: ŞİFRE AYARLARI */}
+        {/* 5. SEKME: 🔥 BULUT BAĞLANTISI (CİHAZLAR ARASI SENKRONİZASYON) */}
+        {activeTab === 'cloud' && (
+          <div style={{
+            maxWidth: '680px',
+            margin: '0 auto',
+            backgroundColor: '#ffffff',
+            borderRadius: '24px',
+            padding: '32px',
+            border: '1px solid #e2e8f0',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.04)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+              <div>
+                <h3 style={{ fontSize: '20px', fontWeight: 900, color: '#0f3c3a', margin: '0 0 4px 0' }}>
+                  🔥 Canlı Bulut Veritabanı (Firebase Firestore)
+                </h3>
+                <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
+                  Müşteri telefonlarından verilen siparişlerin dükkan ekranına canlı düşmesi için bulut bağlantısı
+                </p>
+              </div>
+
+              <span style={{
+                backgroundColor: isFirebaseConfigured ? '#dcfce7' : '#fee2e2',
+                color: isFirebaseConfigured ? '#166534' : '#991b1b',
+                padding: '6px 14px',
+                borderRadius: '12px',
+                fontSize: '12px',
+                fontWeight: 800
+              }}>
+                {isFirebaseConfigured ? '🟢 BULUT AKTİF' : '🔴 BAĞLANTI BEKLİYOR'}
+              </span>
+            </div>
+
+            {isFirebaseConfigured ? (
+              <div style={{
+                backgroundColor: '#f0fdf4',
+                border: '2px solid #bbf7d0',
+                borderRadius: '16px',
+                padding: '20px',
+                marginBottom: '24px'
+              }}>
+                <h4 style={{ color: '#166534', margin: '0 0 6px 0', fontSize: '15px', fontWeight: 800 }}>
+                  🎉 Tebrikler! Bulut Bağlantınız Başarıyla Çalışıyor!
+                </h4>
+                <p style={{ color: '#15803d', fontSize: '13px', lineHeight: '1.6', margin: 0 }}>
+                  • Müşteriler masalardan sipariş verdiğinde anında bu ekrana düşer.<br />
+                  • Sayfayı yenilemenize gerek yoktur, <code>onSnapshot</code> canlı dinleyici açıktır.<br />
+                  • Yeni sipariş geldiğinde <strong>restoran zili (Ding-Dong)</strong> çalar.
+                </p>
+
+                <div style={{ marginTop: '16px', display: 'flex', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => playOrderSound()}
+                    style={{
+                      backgroundColor: '#166534',
+                      color: '#ffffff',
+                      border: 'none',
+                      padding: '10px 18px',
+                      borderRadius: '10px',
+                      fontWeight: 800,
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    🔊 Zil Sesini Test Et
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (confirm("Bulut bağlantı ayarını sıfırlamak istediğinize emin misiniz?")) {
+                        removeFirebaseConfig();
+                      }
+                    }}
+                    style={{
+                      backgroundColor: 'transparent',
+                      color: '#dc2626',
+                      border: '1px solid #fca5a5',
+                      padding: '10px 14px',
+                      borderRadius: '10px',
+                      fontWeight: 700,
+                      fontSize: '12px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Bağlantıyı Sıfırla
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{
+                backgroundColor: '#fffbeb',
+                border: '2px solid #fef3c7',
+                borderRadius: '16px',
+                padding: '18px',
+                marginBottom: '24px',
+                fontSize: '13px',
+                color: '#92400e',
+                lineHeight: '1.6'
+              }}>
+                <strong style={{ display: 'block', marginBottom: '4px', fontSize: '14px' }}>
+                  📌 Firebase Firestore'u 3 Adımda Bağlayın (Ücretsiz):
+                </strong>
+                1. <strong>Firebase Console</strong>'a (<a href="https://console.firebase.google.com" target="_blank" rel="noreferrer" style={{ color: '#b45309', fontWeight: 800 }}>console.firebase.google.com</a>) gidin ve <code>waffloqmenu</code> projenizi açın.<br />
+                2. Sol menüden <strong>Build ➔ Firestore Database</strong>'e tıklayıp veritabanını oluşturun (Test modunda başlatın).<br />
+                3. Sol üstteki <strong>Proje Ayarları (Çark İkonu) ➔ Genel ➔ Uygulamalarınız (Web SDK)</strong> alanındaki bilgileri aşağıdaki kutulara yapıştırıp <strong>"Bulutu Bağla"</strong> butonuna basın!
+              </div>
+            )}
+
+            {/* Bağlantı Formu */}
+            <form onSubmit={handleSaveCloudConfig}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                    Firebase API Key *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="AIzaSy..."
+                    value={cloudApiKey}
+                    onChange={(e) => setCloudApiKey(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '12px 14px',
+                      borderRadius: '12px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '13px',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                    Project ID *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="waffloqmenu"
+                    value={cloudProjectId}
+                    onChange={(e) => setCloudProjectId(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '12px 14px',
+                      borderRadius: '12px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '13px',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                    App ID (Opsiyonel)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="1:1234567890:web:abcdef"
+                    value={cloudAppId}
+                    onChange={(e) => setCloudAppId(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '12px 14px',
+                      borderRadius: '12px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '13px',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: '6px' }}>
+                    Auth Domain
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="waffloqmenu.firebaseapp.com"
+                    value={cloudAuthDomain}
+                    onChange={(e) => setCloudAuthDomain(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '12px 14px',
+                      borderRadius: '12px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '13px',
+                      outline: 'none',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                style={{
+                  width: '100%',
+                  padding: '14px',
+                  backgroundColor: '#0f3c3a',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '14px',
+                  fontSize: '14px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 14px rgba(15, 60, 58, 0.25)'
+                }}
+              >
+                🔥 Bulut Bağlantısını Kaydet ve Etkinleştir
+              </button>
+            </form>
+          </div>
+        )}
+
+        {/* 6. SEKME: ŞİFRE AYARLARI */}
         {activeTab === 'security' && (
           <div style={{
             maxWidth: '480px',
