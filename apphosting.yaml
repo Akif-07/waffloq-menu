@@ -1,0 +1,7 @@
+# Firebase App Hosting Yapılandırması
+runConfig:
+  minInstances: 0
+  maxInstances: 1
+  concurrency: 80
+  cpu: 1
+  memoryMiB: 512
