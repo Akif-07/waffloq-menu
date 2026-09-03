@@ -338,8 +338,8 @@ export const SHOP_INFO = {
   logo: '/logo.png',
   address: 'Waffloq Şubesi',
   phone: '0 (555) 000 00 00',
-  wifiName: 'Waffloq_Guest',
-  wifiPass: 'waffloq1234',
+  wifiName: 'WAFFLOQ',
+  wifiPass: 'waffloq33',
   openingHours: '10:00 - 01:00 (Hergün Açık)',
   instagram: '@waffloq'
 };
