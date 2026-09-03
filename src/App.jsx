@@ -5,6 +5,7 @@ import MenuItemCard from './components/MenuItemCard';
 import ProductDetailModal from './components/ProductDetailModal';
 import QRCodeModal from './components/QRCodeModal';
 import AdminPanel from './components/AdminPanel';
+import AdminAuthModal from './components/AdminAuthModal';
 import CartDrawer from './components/CartDrawer';
 import { menuService } from './firebase/menuService';
 import { isFirebaseConfigured } from './firebase/config';
@@ -13,13 +14,15 @@ import { SHOP_INFO } from './data/defaultMenu';
 export default function App() {
   const [categories, setCategories] = useState([]);
   const [menuItems, setMenuItems] = useState([]);
-  const [selectedCategory, setSelectedCategory] = useState('all-waffles');
+  const [selectedCategory, setSelectedCategory] = useState('waffles');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Modals & Drawers
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [showQrModal, setShowQrModal] = useState(false);
+  const [showAdminAuthModal, setShowAdminAuthModal] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [showCartDrawer, setShowCartDrawer] = useState(false);
   const [cartItems, setCartItems] = useState([]);
 
@@ -27,20 +30,22 @@ export default function App() {
   const [tableNumber, setTableNumber] = useState(null);
 
   useEffect(() => {
-    // URL'den masa no oku
     const params = new URLSearchParams(window.location.search);
     const tNum = params.get('masa') || params.get('table') || params.get('m');
     if (tNum) {
       setTableNumber(tNum);
     }
 
-    // Menü verilerini sıfırla ve yeni listeyi yükle
     loadData();
   }, []);
 
   const loadData = async () => {
-    const items = await menuService.resetToDefaults();
     const cats = await menuService.getCategories();
+    let items = await menuService.getMenuItems();
+    // Eğer depoda kayıtlı ürün yoksa veya boşsa varsayılanları yükle
+    if (!items || items.length === 0) {
+      items = await menuService.resetToDefaults();
+    }
     setCategories(cats);
     setMenuItems(items);
     if (cats.length > 0) {
@@ -77,7 +82,26 @@ export default function App() {
     setCartItems([]);
   };
 
-  // Admin Güncellemeleri
+  // Admin Güvenlik & İşlemleri
+  const handleOpenAdmin = () => {
+    if (isAdminAuthenticated) {
+      setShowAdminModal(true);
+    } else {
+      setShowAdminAuthModal(true);
+    }
+  };
+
+  const handleAdminAuthSuccess = () => {
+    setIsAdminAuthenticated(true);
+    setShowAdminAuthModal(false);
+    setShowAdminModal(true);
+  };
+
+  const handleAdminLogout = () => {
+    setIsAdminAuthenticated(false);
+    setShowAdminModal(false);
+  };
+
   const handleUpdateMenuItem = async (updatedItem) => {
     const updatedList = await menuService.updateMenuItem(updatedItem);
     setMenuItems(updatedList);
@@ -106,7 +130,7 @@ export default function App() {
         item.description?.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
-    return menuItems.filter(item => item.categoryId === selectedCategory || selectedCategory === 'all-waffles');
+    return menuItems.filter(item => item.categoryId === selectedCategory);
   }, [menuItems, searchQuery, selectedCategory]);
 
   const totalCartCount = cartItems.reduce((acc, i) => acc + (i.quantity || 1), 0);
@@ -121,11 +145,11 @@ export default function App() {
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
           onOpenQrModal={() => setShowQrModal(true)}
-          onOpenAdminModal={() => setShowAdminModal(true)}
+          onOpenAdminModal={handleOpenAdmin}
           isFirebaseActive={isFirebaseConfigured}
         />
 
-        {/* Yatay Kategori Çubuğu (Birden fazla kategori varsa göster) */}
+        {/* Yatay Kategori Çubuğu */}
         {!searchQuery && categories.length > 1 && (
           <CategoryNav
             categories={categories}
@@ -195,6 +219,15 @@ export default function App() {
             <span className="font-slogan text-[10px] font-bold text-waffloq-300 tracking-widest uppercase">{SHOP_INFO.tagline}</span>
           </div>
 
+          <div className="pt-2 flex items-center justify-center gap-4 text-[11px] text-waffloq-300">
+            <button
+              onClick={handleOpenAdmin}
+              className="text-waffloq-400 hover:text-white underline underline-offset-4 transition-colors"
+            >
+              🔒 Yetkili Yönetim Girişi
+            </button>
+          </div>
+
           <p className="pt-2 text-[10px] text-waffloq-400/80">
             {SHOP_INFO.name} © {new Date().getFullYear()} • QR Menü & Sipariş Sistemi
           </p>
@@ -241,6 +274,14 @@ export default function App() {
         />
       )}
 
+      {/* Şifre Doğrulama Modalı */}
+      <AdminAuthModal
+        isOpen={showAdminAuthModal}
+        onClose={() => setShowAdminAuthModal(false)}
+        onSuccess={handleAdminAuthSuccess}
+      />
+
+      {/* Yönetici Paneli */}
       {showAdminModal && (
         <AdminPanel
           menuItems={menuItems}
@@ -250,6 +291,7 @@ export default function App() {
           onDeleteItem={handleDeleteItem}
           onResetDefaults={handleResetDefaults}
           onClose={() => setShowAdminModal(false)}
+          onLogout={handleAdminLogout}
         />
       )}
 

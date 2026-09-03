@@ -1,16 +1,20 @@
 import React, { useState, useRef } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { X, Download, Printer, Copy, Check, ExternalLink } from 'lucide-react';
+import { X, Download, Printer, Copy, Check, ExternalLink, Globe } from 'lucide-react';
 import { SHOP_INFO } from '../data/defaultMenu';
+
+const PRODUCTION_URL = 'https://waffloq-menu--waffloqmenu.europe-west4.hosted.app';
 
 export default function QRCodeModal({ onClose }) {
   const [tableCount, setTableCount] = useState(10);
   const [selectedTable, setSelectedTable] = useState(1);
   const [copied, setCopied] = useState(false);
+  const [useProductionUrl, setUseProductionUrl] = useState(true);
   const printRef = useRef(null);
 
-  const baseUrl = window.location.origin + window.location.pathname;
-  const currentTableUrl = `${baseUrl}?masa=${selectedTable}`;
+  // Canlı App Hosting adresi veya geçerli origin
+  const baseUrl = useProductionUrl ? PRODUCTION_URL : (window.location.origin + window.location.pathname);
+  const currentTableUrl = `${baseUrl.replace(/\/$/, '')}/?masa=${selectedTable}`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(currentTableUrl);
@@ -38,8 +42,19 @@ export default function QRCodeModal({ onClose }) {
           </div>
           <div>
             <h2 className="text-xl font-black text-waffloq-950">Masa QR Kod & Stand Üretici</h2>
-            <p className="text-xs text-stone-500">Masalarınıza özel taranabilir WAFFLOQ QR kodları üretin.</p>
+            <p className="text-xs text-stone-500">Müşterilerinizin telefonla tarayabileceği canlı QR kodlar.</p>
           </div>
+        </div>
+
+        {/* Canlı Adres Bilgi Kutusu */}
+        <div className="bg-emerald-50 border border-emerald-200/80 p-3 rounded-2xl mb-4 text-xs flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-emerald-900 font-medium">
+            <Globe className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>Hedef Adres: <strong className="font-bold font-mono">waffloq-menu.hosted.app</strong> (Canlı)</span>
+          </div>
+          <span className="bg-emerald-600 text-white font-bold text-[10px] px-2 py-0.5 rounded-full">
+            Aktif
+          </span>
         </div>
 
         {/* Masa Seçici */}
@@ -120,7 +135,7 @@ export default function QRCodeModal({ onClose }) {
         {/* URL Bilgisi & Aksiyonlar */}
         <div className="mt-5 space-y-3">
           <div className="flex items-center gap-2 bg-waffloq-50 p-2.5 rounded-xl border border-waffloq-200 text-xs">
-            <span className="font-mono text-waffloq-900 truncate flex-1">{currentTableUrl}</span>
+            <span className="font-mono text-waffloq-900 truncate flex-1 font-semibold">{currentTableUrl}</span>
             <button
               onClick={handleCopy}
               className="p-1.5 bg-white hover:bg-waffloq-100 border border-waffloq-300 rounded-lg text-waffloq-800 shrink-0 transition-colors"
@@ -133,7 +148,7 @@ export default function QRCodeModal({ onClose }) {
               target="_blank"
               rel="noreferrer"
               className="p-1.5 bg-white hover:bg-waffloq-100 border border-waffloq-300 rounded-lg text-waffloq-800 shrink-0 transition-colors"
-              title="Yeni Sekmede Aç"
+              title="Canlı Adresi Aç"
             >
               <ExternalLink className="w-4 h-4" />
             </a>
