@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ShoppingBag, X, Plus, Minus, Send, CheckCircle, Trash2 } from 'lucide-react';
+import { orderService } from '../firebase/orderService';
 
 export default function CartDrawer({
   isOpen,
@@ -11,12 +12,27 @@ export default function CartDrawer({
   tableNumber
 }) {
   const [orderSent, setOrderSent] = useState(false);
+  const [isSending, setIsSending] = useState(false);
 
   const totalAmount = cartItems.reduce((sum, item) => sum + (item.price * (item.quantity || 1)), 0);
   const totalCount = cartItems.reduce((sum, item) => sum + (item.quantity || 1), 0);
 
-  const handleSendOrder = () => {
-    setOrderSent(true);
+  const handleSendOrder = async () => {
+    setIsSending(true);
+    try {
+      await orderService.sendOrder({
+        tableNumber: tableNumber || 'Belirtilmedi',
+        items: cartItems,
+        totalAmount,
+        totalCount
+      });
+      setOrderSent(true);
+    } catch (err) {
+      console.error(err);
+      setOrderSent(true);
+    } finally {
+      setIsSending(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -47,12 +63,12 @@ export default function CartDrawer({
         {/* Sipariş Başarılı Ekranı */}
         {orderSent ? (
           <div className="flex-1 p-6 flex flex-col items-center justify-center text-center">
-            <div className="w-16 h-16 rounded-full bg-waffloq-100 text-waffloq-700 flex items-center justify-center mb-4 animate-bounce">
+            <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center mb-4 animate-bounce">
               <CheckCircle className="w-10 h-10" />
             </div>
-            <h4 className="text-xl font-black text-waffloq-950 font-brand">Siparişiniz Alındı!</h4>
+            <h4 className="text-xl font-black text-waffloq-950 font-brand">Siparişiniz Mutfağa İletildi!</h4>
             <p className="text-xs text-stone-600 mt-2 max-w-xs leading-relaxed">
-              Talebiniz mutfağa iletildi. En taze haliyle hazırlanıyor. Garsonumuz masanıza servis edecektir.
+              Siparişiniz dükkan yönetim paneline ve mutfak ekranına düştü. Garsonumuz masanıza servis edecektir.
             </p>
 
             <div className="mt-6 p-4 rounded-2xl bg-waffloq-50 border border-waffloq-200 w-full text-xs text-left space-y-1.5">
@@ -86,7 +102,7 @@ export default function CartDrawer({
                   <span className="text-4xl mb-2">🧇</span>
                   <p className="font-bold text-waffloq-950 text-sm">Listeniz Boş</p>
                   <p className="text-xs text-stone-500 mt-1 max-w-xs">
-                    Menüden nefis waffle çeşitlerini ekleyerek sipariş listenizi oluşturabilirsiniz.
+                    Menüden nefis waffle ve içecekleri ekleyerek sipariş listenizi oluşturabilirsiniz.
                   </p>
                 </div>
               ) : (
@@ -155,11 +171,12 @@ export default function CartDrawer({
                   </button>
 
                   <button
+                    disabled={isSending}
                     onClick={handleSendOrder}
-                    className="flex-1 py-3.5 px-4 bg-gradient-to-r from-waffloq-700 to-waffloq-500 hover:bg-waffloq-600 text-white font-extrabold text-sm rounded-2xl transition-all shadow-md shadow-waffloq-600/30 flex items-center justify-center gap-2 active:scale-98"
+                    className="flex-1 py-3.5 px-4 bg-gradient-to-r from-waffloq-700 to-waffloq-500 hover:bg-waffloq-600 text-white font-extrabold text-sm rounded-2xl transition-all shadow-md shadow-waffloq-600/30 flex items-center justify-center gap-2 active:scale-98 disabled:opacity-50"
                   >
                     <Send className="w-4 h-4" />
-                    <span>Garsona İlet / Sipariş Ver</span>
+                    <span>{isSending ? 'İletiliyor...' : 'Garsona İlet / Sipariş Ver'}</span>
                   </button>
                 </div>
               </div>

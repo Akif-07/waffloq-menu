@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { X, Plus, Trash2, Check, RefreshCw, Database, KeyRound, Lock, LogOut } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Plus, Trash2, Check, RefreshCw, KeyRound, Lock, LogOut, Bell, Clock, CheckCircle2 } from 'lucide-react';
 import { isFirebaseConfigured } from '../firebase/config';
+import { orderService } from '../firebase/orderService';
 
 export default function AdminPanel({
   menuItems = [],
@@ -12,13 +13,48 @@ export default function AdminPanel({
   onClose = () => {},
   onLogout = () => {}
 }) {
-  const [activeTab, setActiveTab] = useState('items'); // 'items' | 'add' | 'security' | 'firebase'
+  const [activeTab, setActiveTab] = useState('orders'); // 'orders' | 'items' | 'add' | 'security' | 'firebase'
   const [searchTerm, setSearchTerm] = useState('');
   const [newPin, setNewPin] = useState('');
   const [pinSuccess, setPinSuccess] = useState(false);
+  const [liveOrders, setLiveOrders] = useState([]);
 
-  // Güvenli liste kontrolü
   const safeMenuItems = Array.isArray(menuItems) ? menuItems : [];
+
+  useEffect(() => {
+    loadOrders();
+
+    const handleOrderEvent = () => {
+      loadOrders();
+    };
+
+    window.addEventListener('waffloq_new_order', handleOrderEvent);
+    window.addEventListener('storage', handleOrderEvent);
+
+    return () => {
+      window.removeEventListener('waffloq_new_order', handleOrderEvent);
+      window.removeEventListener('storage', handleOrderEvent);
+    };
+  }, []);
+
+  const loadOrders = () => {
+    const orders = orderService.getLocalOrders();
+    setLiveOrders(orders);
+  };
+
+  const handleStatusChange = async (orderId, currentStatus) => {
+    let nextStatus = 'preparing';
+    if (currentStatus === 'preparing') nextStatus = 'completed';
+    else if (currentStatus === 'completed') nextStatus = 'pending';
+    
+    const updated = await orderService.updateOrderStatus(orderId, nextStatus);
+    setLiveOrders(updated);
+  };
+
+  const handleDeleteOrder = async (orderId) => {
+    const updated = await orderService.deleteOrder(orderId);
+    setLiveOrders(updated);
+  };
 
   // Yeni Ürün Form Durumu
   const [newForm, setNewForm] = useState({
@@ -75,6 +111,8 @@ export default function AdminPanel({
     return name.includes(search);
   });
 
+  const pendingOrdersCount = liveOrders.filter(o => o.status === 'pending').length;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-waffloq-950/80 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[92vh] overflow-hidden text-stone-800 shadow-2xl relative border border-waffloq-200 flex flex-col">
@@ -116,10 +154,26 @@ export default function AdminPanel({
         {/* Sekmeler */}
         <div className="flex border-b border-stone-200 bg-stone-50 px-4 pt-2 gap-2 text-xs font-bold overflow-x-auto no-scrollbar">
           <button
+            onClick={() => setActiveTab('orders')}
+            className={`pb-2.5 px-3 border-b-2 transition-colors flex items-center gap-1.5 shrink-0 ${
+              activeTab === 'orders'
+                ? 'border-waffloq-600 text-waffloq-800 font-extrabold'
+                : 'border-transparent text-stone-500 hover:text-stone-800'
+            }`}
+          >
+            <Bell className="w-3.5 h-3.5" />
+            <span>Masa Siparişleri ({liveOrders.length})</span>
+            {pendingOrdersCount > 0 && (
+              <span className="bg-berry text-white text-[10px] px-1.5 py-0.5 rounded-full animate-pulse">
+                {pendingOrdersCount} Yeni
+              </span>
+            )}
+          </button>
+          <button
             onClick={() => setActiveTab('items')}
             className={`pb-2.5 px-3 border-b-2 transition-colors shrink-0 ${
               activeTab === 'items'
-                ? 'border-waffloq-600 text-waffloq-800'
+                ? 'border-waffloq-600 text-waffloq-800 font-extrabold'
                 : 'border-transparent text-stone-500 hover:text-stone-800'
             }`}
           >
@@ -129,7 +183,7 @@ export default function AdminPanel({
             onClick={() => setActiveTab('add')}
             className={`pb-2.5 px-3 border-b-2 transition-colors flex items-center gap-1 shrink-0 ${
               activeTab === 'add'
-                ? 'border-waffloq-600 text-waffloq-800'
+                ? 'border-waffloq-600 text-waffloq-800 font-extrabold'
                 : 'border-transparent text-stone-500 hover:text-stone-800'
             }`}
           >
@@ -140,7 +194,7 @@ export default function AdminPanel({
             onClick={() => setActiveTab('security')}
             className={`pb-2.5 px-3 border-b-2 transition-colors flex items-center gap-1 shrink-0 ${
               activeTab === 'security'
-                ? 'border-waffloq-600 text-waffloq-800'
+                ? 'border-waffloq-600 text-waffloq-800 font-extrabold'
                 : 'border-transparent text-stone-500 hover:text-stone-800'
             }`}
           >
@@ -151,7 +205,7 @@ export default function AdminPanel({
             onClick={() => setActiveTab('firebase')}
             className={`pb-2.5 px-3 border-b-2 transition-colors shrink-0 ${
               activeTab === 'firebase'
-                ? 'border-waffloq-600 text-waffloq-800'
+                ? 'border-waffloq-600 text-waffloq-800 font-extrabold'
                 : 'border-transparent text-stone-500 hover:text-stone-800'
             }`}
           >
@@ -161,10 +215,117 @@ export default function AdminPanel({
 
         {/* İçerik Bölümü */}
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 bg-stone-50/50">
-          {/* 1. SEKME: Ürün Listesi ve Hızlı Düzenleme */}
+          {/* 1. SEKME: Gelen Masa Siparişleri */}
+          {activeTab === 'orders' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-sm text-stone-800">Masalardan Gelen Anlık Siparişler</h3>
+                  <p className="text-xs text-stone-500">Müşterilerin 'Garsona İlet' dediği siparişler burada listelenir.</p>
+                </div>
+                {liveOrders.length > 0 && (
+                  <button
+                    onClick={() => {
+                      if (confirm("Tüm sipariş geçmişini temizlemek istiyor musunuz?")) {
+                        orderService.clearAllOrders();
+                        setLiveOrders([]);
+                      }
+                    }}
+                    className="text-xs text-stone-400 hover:text-berry font-bold"
+                  >
+                    Tümünü Temizle
+                  </button>
+                )}
+              </div>
+
+              {liveOrders.length === 0 ? (
+                <div className="p-12 text-center bg-white rounded-2xl border border-stone-200">
+                  <Bell className="w-8 h-8 text-stone-300 mx-auto mb-2" />
+                  <p className="font-bold text-stone-700 text-sm">Henüz yeni sipariş bulunmuyor</p>
+                  <p className="text-xs text-stone-400 mt-1">Müşteriler QR kodla sipariş verdikçe anında buraya düşecektir.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {liveOrders.map((order) => {
+                    const isPending = order.status === 'pending';
+                    const isPreparing = order.status === 'preparing';
+                    const isCompleted = order.status === 'completed';
+
+                    return (
+                      <div
+                        key={order.id}
+                        className={`p-4 bg-white rounded-2xl border-2 transition-all shadow-xs ${
+                          isPending ? 'border-amber-400 bg-amber-50/20' : isPreparing ? 'border-blue-400 bg-blue-50/20' : 'border-stone-200 opacity-80'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3 border-b border-stone-100 pb-3 mb-3">
+                          <div className="flex items-center gap-2.5">
+                            <span className="px-3 py-1 bg-waffloq-900 text-white font-black text-sm rounded-xl font-brand">
+                              Masa #{order.tableNumber}
+                            </span>
+                            <span className="text-xs font-semibold text-stone-500 flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5 text-stone-400" />
+                              {order.timeFormatted || 'Yeni'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleStatusChange(order.id, order.status)}
+                              className={`px-3 py-1 rounded-xl text-xs font-bold transition-colors ${
+                                isPending
+                                  ? 'bg-amber-500 hover:bg-amber-600 text-white animate-pulse'
+                                  : isPreparing
+                                  ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                              }`}
+                            >
+                              {isPending ? '⏳ Hazırla' : isPreparing ? '🍳 Teslim Et' : '✅ Tamamlandı'}
+                            </button>
+
+                            <button
+                              onClick={() => handleDeleteOrder(order.id)}
+                              className="p-1.5 text-stone-400 hover:text-berry hover:bg-rose-50 rounded-lg transition-colors"
+                              title="Siparişi Sil"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Sipariş Kalemleri */}
+                        <div className="space-y-1.5 text-xs">
+                          {(order.items || []).map((item, i) => (
+                            <div key={i} className="flex justify-between items-center bg-stone-50 p-2 rounded-xl border border-stone-100">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-waffloq-900">{item.quantity || 1}x</span>
+                                <span className="font-semibold text-stone-800">{item.name}</span>
+                                {item.specialNote && (
+                                  <span className="text-[10px] text-amber-800 bg-amber-100/80 px-1.5 py-0.5 rounded">
+                                    Not: {item.specialNote}
+                                  </span>
+                                )}
+                              </div>
+                              <span className="font-bold text-waffloq-700">{(item.price || 0) * (item.quantity || 1)} TL</span>
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="mt-3 pt-2 border-t border-stone-100 flex justify-between items-center text-xs font-black">
+                          <span className="text-stone-500">Toplam Tutar:</span>
+                          <span className="text-base text-waffloq-900">{order.totalAmount} TL</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 2. SEKME: Ürün Listesi ve Hızlı Düzenleme */}
           {activeTab === 'items' && (
             <div className="space-y-4">
-              {/* Arama */}
               <div>
                 <input
                   type="text"
@@ -175,7 +336,6 @@ export default function AdminPanel({
                 />
               </div>
 
-              {/* Ürün Listesi */}
               <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
                 {filteredItems.map((item) => (
                   <div
@@ -202,7 +362,6 @@ export default function AdminPanel({
                     </div>
 
                     <div className="flex items-center gap-2 shrink-0">
-                      {/* Fiyat Güncelleme */}
                       <input
                         type="number"
                         defaultValue={item.price}
@@ -216,7 +375,6 @@ export default function AdminPanel({
                         title="Fiyatı değiştirmek için yazıp dışına tıklayın"
                       />
 
-                      {/* Stok Durumu Toggle */}
                       <button
                         onClick={() => onUpdateItem({ ...item, available: item.available === false ? true : false })}
                         className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
@@ -228,7 +386,6 @@ export default function AdminPanel({
                         {item.available !== false ? 'Stokta' : 'Tükendi'}
                       </button>
 
-                      {/* Sil */}
                       <button
                         onClick={() => {
                           if (confirm(`"${item.name}" ürününü silmek istediğinize emin misiniz?`)) {
@@ -245,7 +402,6 @@ export default function AdminPanel({
                 ))}
               </div>
 
-              {/* Varsayılana Sıfırla Butonu */}
               <div className="pt-3 border-t border-stone-200 flex justify-between items-center text-xs">
                 <span className="text-stone-400">Tüm menüyü orijinal listeye sıfırlamak için:</span>
                 <button
@@ -263,7 +419,7 @@ export default function AdminPanel({
             </div>
           )}
 
-          {/* 2. SEKME: Yeni Ürün Ekle */}
+          {/* 3. SEKME: Yeni Ürün Ekle */}
           {activeTab === 'add' && (
             <form onSubmit={handleAddNewItem} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -334,7 +490,7 @@ export default function AdminPanel({
             </form>
           )}
 
-          {/* 3. SEKME: Şifre & Güvenlik Ayarları */}
+          {/* 4. SEKME: Şifre & Güvenlik Ayarları */}
           {activeTab === 'security' && (
             <div className="max-w-md mx-auto space-y-4">
               <div className="bg-waffloq-50 border border-waffloq-200 p-4 rounded-2xl text-xs text-waffloq-950">
@@ -377,7 +533,7 @@ export default function AdminPanel({
             </div>
           )}
 
-          {/* 4. SEKME: Firebase Bağlantı Rehberi */}
+          {/* 5. SEKME: Firebase Bağlantı Rehberi */}
           {activeTab === 'firebase' && (
             <div className="space-y-3 text-xs text-stone-700">
               <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl">
