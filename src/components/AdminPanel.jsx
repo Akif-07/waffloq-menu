@@ -823,21 +823,6 @@ export default function AdminPanel({
                 >
                   🥤 İçecekler
                 </button>
-                <button
-                  onClick={() => setSelectedCategoryFilter('extras')}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: '10px',
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    border: 'none',
-                    backgroundColor: selectedCategoryFilter === 'extras' ? '#0f3c3a' : '#f1f5f9',
-                    color: selectedCategoryFilter === 'extras' ? '#ffffff' : '#475569'
-                  }}
-                >
-                  🍓 Meyveler
-                </button>
               </div>
             </div>
 
@@ -1049,7 +1034,6 @@ export default function AdminPanel({
                     <option value="waffles">🧇 Waffle Çeşitleri</option>
                     <option value="menus">🍽️ Avantajlı Menüler</option>
                     <option value="drinks">🥤 İçecekler</option>
-                    <option value="extras">🍓 Ekstra Meyveler</option>
                   </select>
                 </div>
 

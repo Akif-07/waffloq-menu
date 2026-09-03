@@ -1,8 +1,7 @@
 export const DEFAULT_CATEGORIES = [
   { id: 'waffles', name: '🧇 Waffle & Bowl', description: 'Taptaze çıtır hamur, zengin Belçika çikolatası ve taze meyveler' },
   { id: 'menus', name: '🍽️ Avantajlı Menüler', description: 'Waffle ve soğuk içecek menüleri' },
-  { id: 'drinks', name: '🥤 İçecekler', description: 'Kutu meşrubat, doğal maden suyu ve soğuk çaylar' },
-  { id: 'extras', name: '🍓 Ekstra Meyveler', description: 'Taze porsiyon meyve seçenekleri' }
+  { id: 'drinks', name: '🥤 İçecekler', description: 'Kutu meşrubat, doğal maden suyu ve soğuk çaylar' }
 ];
 
 export const WAFFLE_BUILDER_DATA = {
@@ -329,26 +328,6 @@ export const DEFAULT_MENU_ITEMS = [
     price: 25,
     description: 'Şişe doğal kaynak suyu (500 ml).',
     image: 'https://cdn.tgoapps.com/tgo2/spm/prod/meal/media/images/product/473555/20899375_1786970240982.jpg',
-    available: true
-  },
-  // 27. Muz
-  {
-    id: 'extra-muz',
-    categoryId: 'extras',
-    name: 'Muz (Porsiyon)',
-    price: 40,
-    description: 'Taze dilimlenmiş muz porsiyonu.',
-    image: 'https://images.unsplash.com/photo-1571771894821-ce9b6c11b08e?w=600&q=80',
-    available: true
-  },
-  // 28. Çilek
-  {
-    id: 'extra-cilek',
-    categoryId: 'extras',
-    name: 'Çilek (Porsiyon)',
-    price: 50,
-    description: 'Taze doğranmış çilek porsiyonu.',
-    image: 'https://images.unsplash.com/photo-1464965911861-746a04b4bca6?w=600&q=80',
     available: true
   }
 ];

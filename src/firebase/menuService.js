@@ -2,10 +2,10 @@ import { db, isFirebaseConfigured } from './config';
 import { collection, getDocs, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { DEFAULT_MENU_ITEMS, WAFFLE_BUILDER_DATA, DEFAULT_CATEGORIES } from '../data/defaultMenu';
 
-// v3: Kullanıcının sunduğu güncel resmi Trendyol/TGO Yemek listesi
-const STORAGE_KEY_MENU = 'waffloqmenu_items_v3';
-const STORAGE_KEY_BUILDER = 'waffloqmenu_builder_v3';
-const STORAGE_KEY_CATEGORIES = 'waffloqmenu_categories_v3';
+// v4: Ekstra meyveler tabı kaldırıldı, temiz 3 ana kategori
+const STORAGE_KEY_MENU = 'waffloqmenu_items_v4';
+const STORAGE_KEY_BUILDER = 'waffloqmenu_builder_v4';
+const STORAGE_KEY_CATEGORIES = 'waffloqmenu_categories_v4';
 
 export const menuService = {
   // Menü ürünlerini getir
