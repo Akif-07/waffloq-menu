@@ -288,6 +288,7 @@ export default function App() {
           item={selectedProduct}
           onClose={() => setSelectedProduct(null)}
           onAddToCart={handleAddToCart}
+          onQuickOrder={() => setShowCartDrawer(true)}
         />
       )}
 
