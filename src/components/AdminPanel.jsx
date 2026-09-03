@@ -146,9 +146,22 @@ export default function AdminPanel({
   // Yeni Sipariş Bildirim Banner'ı
   const [orderAlert, setOrderAlert] = useState({ show: false, table: '', amount: 0, time: '' });
 
-  // 80mm Termal Adisyon Yazdırma State
-  const [receiptModalOrder, setReceiptModalOrder] = useState(null);
-  const [autoPrint, setAutoPrint] = useState(false);
+  // 80mm Termal Adisyon Otomatik Yazdırma (Varsayılan Açık)
+  const [autoPrint, setAutoPrint] = useState(() => {
+    const saved = localStorage.getItem('waffloq_auto_print');
+    return saved !== null ? saved === 'true' : true;
+  });
+  const autoPrintRef = React.useRef(autoPrint);
+
+  useEffect(() => {
+    autoPrintRef.current = autoPrint;
+    localStorage.setItem('waffloq_auto_print', String(autoPrint));
+  }, [autoPrint]);
+
+  const toggleAutoPrint = (val) => {
+    setAutoPrint(val);
+    localStorage.setItem('waffloq_auto_print', String(val));
+  };
 
   // Şifre değiştirme state
   const [newPin, setNewPin] = useState('');
@@ -188,9 +201,9 @@ export default function AdminPanel({
           time: newOrder.timeFormatted || 'Az önce'
         });
 
-        // Eğer otomatik adisyon yazdırma açıksa doğrudan yazdır
-        if (autoPrint) {
-          handlePrintReceipt(newOrder);
+        // 🖨️ SİPARİŞ GELİR GELMEZ DKT-B823 YAZICISINDAN ANINDA ADİSYON ÇIKAR
+        if (autoPrintRef.current) {
+          printThermalReceipt(newOrder);
         }
 
         setTimeout(() => {
@@ -204,7 +217,7 @@ export default function AdminPanel({
         unsubscribe();
       }
     };
-  }, [autoPrint]);
+  }, []);
 
   // Aktif Siparişler (Bekleyen & Hazırlanan)
   const activeOrders = useMemo(() => {
@@ -498,22 +511,24 @@ export default function AdminPanel({
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
-            backgroundColor: autoPrint ? '#14532d' : '#0f3c3a',
-            border: autoPrint ? '1px solid #22c55e' : '1px solid #17625e',
-            padding: '8px 12px',
+            backgroundColor: autoPrint ? '#166534' : '#1e293b',
+            border: autoPrint ? '2px solid #86efac' : '1px solid #475569',
+            padding: '8px 14px',
             borderRadius: '12px',
             fontSize: '12px',
-            fontWeight: 700,
+            fontWeight: 800,
             cursor: 'pointer',
-            color: '#ffffff'
+            color: '#ffffff',
+            boxShadow: autoPrint ? '0 0 14px rgba(34, 197, 94, 0.4)' : 'none',
+            transition: 'all 0.2s'
           }}>
             <input
               type="checkbox"
               checked={autoPrint}
-              onChange={(e) => setAutoPrint(e.target.checked)}
-              style={{ cursor: 'pointer' }}
+              onChange={(e) => toggleAutoPrint(e.target.checked)}
+              style={{ cursor: 'pointer', width: '16px', height: '16px' }}
             />
-            <span>🖨️ Otomatik Adisyon</span>
+            <span>🖨️ Otomatik Yazdırma: <strong style={{ color: autoPrint ? '#86efac' : '#94a3b8' }}>{autoPrint ? 'AÇIK' : 'KAPALI'}</strong></span>
           </label>
 
           <button
