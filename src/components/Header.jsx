@@ -34,28 +34,11 @@ export default function Header({
           <div className="flex items-center gap-2 sm:gap-2.5">
             <button
               onClick={() => setShowWifiModal(true)}
-              className="flex items-center gap-1.5 text-waffloq-100 hover:text-white transition-all py-1 px-2.5 rounded-full bg-waffloq-800/80 hover:bg-waffloq-700 border border-waffloq-400/20 shadow-xs"
+              className="flex items-center gap-1.5 text-waffloq-100 hover:text-white transition-all py-1 px-3 rounded-full bg-waffloq-800/80 hover:bg-waffloq-700 border border-waffloq-400/20 shadow-xs"
               title="Wi-Fi Bilgisi"
             >
               <Wifi className="w-3.5 h-3.5 text-waffloq-300" />
               <span className="font-semibold text-[11px]">Wi-Fi</span>
-            </button>
-
-            <button
-              onClick={onOpenQrModal}
-              className="flex items-center gap-1.5 text-waffloq-100 hover:text-white transition-all py-1 px-2.5 rounded-full bg-waffloq-600/60 hover:bg-waffloq-500 border border-waffloq-300/30 shadow-xs"
-              title="Masa QR Kodları"
-            >
-              <QrCode className="w-3.5 h-3.5 text-waffle-light" />
-              <span className="font-semibold text-[11px] hidden xs:inline">Masa QR</span>
-            </button>
-
-            <button
-              onClick={onOpenAdminModal}
-              className="flex items-center gap-1 text-white/60 hover:text-white transition-colors py-1 px-2 rounded-full hover:bg-white/10"
-              title="Yönetim Paneli"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-waffloq-300" />
             </button>
           </div>
         </div>
